@@ -74,6 +74,41 @@ class HookTest(unittest.TestCase):
         self.run_hook("prompt")
         self.assertIsNone(self.run_hook("stop", stop_hook_active=True))
 
+    def test_rb_stamps_time_and_id(self):
+        # an LLM does not know the time: a guessed finished_at outside the turn is replaced, a missing one filled
+        self.run_hook("prompt")
+        d = self.sample()
+        d["run"]["finished_at"] = "2020-01-01T10:00:00+09:00"
+        self.write_status(d)
+        before = time.time()
+        self.assertIsNone(self.run_hook("stop"))
+        saved = json.loads((self.bd / "status.json").read_text(encoding="utf-8"))
+        from datetime import datetime
+        self.assertGreater(datetime.fromisoformat(saved["run"]["finished_at"]).timestamp(), before - 5)
+        first_id = saved["run"]["id"]
+        self.assertNotEqual(first_id, self.sample()["run"]["id"])  # the LLM's id is not used under the hook
+        # next turn: the LLM copies last run's id and leaves the time out
+        self.run_hook("prompt")
+        d = saved
+        d["run"].pop("finished_at")
+        d["run"]["title"] = "next turn"
+        self.write_status(d)
+        self.assertIsNone(self.run_hook("stop"))
+        saved = json.loads((self.bd / "status.json").read_text(encoding="utf-8"))
+        self.assertNotEqual(saved["run"]["id"], first_id)
+        self.assertIn("finished_at", saved["run"])
+        self.assertEqual([r[0] for r in self.rows()], [self.sample()["run"]["title"], "next turn"])
+
+    def test_a_fix_in_the_same_turn_replaces_the_run(self):
+        self.run_hook("prompt")
+        self.write_status(self.sample())
+        self.assertIsNone(self.run_hook("stop"))
+        d = self.sample()
+        d["run"]["title"] = "fixed in the same turn"
+        self.write_status(d)
+        self.assertIsNone(self.run_hook("stop"))
+        self.assertEqual([r[0] for r in self.rows()], ["fixed in the same turn"])
+
     def test_no_turn_record_never_blocks(self):
         self.assertIsNone(self.run_hook("stop"))
 

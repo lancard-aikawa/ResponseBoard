@@ -53,6 +53,17 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); f
 .tag.d-task { background: var(--run-soft); color: var(--run); }
 .tag.d-left { background: var(--warn-soft); color: var(--warn); font-weight: 700; }
 .ledger-h { font-size: 12.5px; font-weight: 700; margin-top: 6px; }
+.flow-legend { margin-top: 2px; }
+.flow-legend .mark { font-size: 12px; }
+.runq { font: inherit; font-size: 14px; width: 100%; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); color: var(--fg); }
+.runlist { display: grid; gap: 4px; grid-auto-rows: max-content; }
+.runrow { font: inherit; font-size: 13.5px; display: flex; gap: 8px; align-items: baseline; width: 100%; text-align: left; cursor: pointer;
+  padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--fg); }
+.runrow:hover, .runrow:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.runrow.hit { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.runrow .grow { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.kroute { font-size: 12.5px; margin: 4px 0 0; padding-left: 1.2em; }
 .row.lrow { flex-wrap: wrap; row-gap: 2px; }
 .row.lrow > .grow { flex: 1 1 15em; }
 .row.lrow .tag { white-space: normal; }
@@ -2087,9 +2098,12 @@ function renderFlow() {
     h("div", { class: "flow-h" },
       h("h2", null, `${ICON.flow} 履歴`), h("span", { class: "hint" }, "セクションごとの流れ。丸を押すとその時点を見る"),
       h("span", { class: "spacer" }), ...filt,
+      h("button", { class: "btn small dlg-open", type: "button", onclick: () => openDlg("runs", chosenId()) }, "☰ 回の一覧"),
       (fSection != null || fTask) && h("span", { class: "tag" }, "当てはまる ", h("b", { class: "num" }, hits.length), " 件"),
       h("button", { class: "btn small", type: "button", onclick: () => step(-1), disabled: (order.length ? at === 0 : cur === String(all[0]?.id)) || null }, "◀ 前の回"),
       h("button", { class: "btn small", type: "button", onclick: () => step(1), disabled: (order.length ? at === order.length - 1 : cur === String(all[all.length - 1]?.id)) || null }, "次の回 ▶")),
+    h("div", { class: "legend flow-legend", "aria-label": "丸の見方と数" }, Object.keys(STATUS).map(k => h("span", null, mk(k), ` ${STATUS[k].label} `,
+      h("b", { class: "num" }, all.filter(n => n.status === k).length))), h("span", null, "全 ", h("b", { class: "num" }, all.length), " 回")),
     older.length > 0 && fold("older", `前のセクション ${older.length} 個`, h("div", { class: "lanes" }, older.map(lane)), "older"),
     h("div", { class: "lanes" }, recent.map(lane)),
     capEl));
@@ -2113,11 +2127,14 @@ function renderPast() {
   const moved = n?.moved || [];
   const gitBy = Object.fromEntries((git?.files || []).map(f => [f.path, f]));
   const gAdd = (git?.files || []).reduce((a, f) => a + (f.add || 0), 0), gDel = (git?.files || []).reduce((a, f) => a + (f.del || 0), 0);
+  // git is the truth when the project has it: the LLM's own list missed files in 5 of 16 runs (2026-10-20)
+  const kindOf = p => changes.find(c => c.path === p || p.endsWith("/" + c.path))?.kind;
+  const files = git?.files?.length ? git.files.map(f => ({ path: f.path, kind: kindOf(f.path) || "modified", add: f.add, del: f.del }))
+    : changes.map(c => ({ path: c.path, kind: c.kind }));
   const did = [
-    changes.length > 0 && h("div", null, h("div", { class: "hint" }, `変えたファイル（${changes.length}）`),
-      changes.map(c => { const g = Object.entries(gitBy).find(([p]) => p === c.path || p.endsWith("/" + c.path))?.[1];
-        return h("div", { class: "row" }, h("span", { class: "kind" }, KIND[c.kind] || c.kind), h("code", { class: "grow" }, c.path),
-          g && h("span", { class: "num", style: "font-size:12px" }, h("span", { class: "plus" }, `+${g.add ?? "?"}`), " ", h("span", { class: "minus" }, `−${g.del ?? "?"}`))); })),
+    files.length > 0 && h("div", null, h("div", { class: "hint" }, `変えたファイル（${files.length}${git?.files?.length ? "、git から" : ""}）`),
+      files.map(f => h("div", { class: "row" }, h("span", { class: "kind" }, KIND[f.kind] || f.kind), h("code", { class: "grow" }, f.path),
+        f.add !== undefined && h("span", { class: "num", style: "font-size:12px" }, h("span", { class: "plus" }, `+${f.add ?? "?"}`), " ", h("span", { class: "minus" }, `−${f.del ?? "?"}`))))),
     checks.length > 0 && h("div", null, h("div", { class: "hint" }, "確かめたこと"),
       checks.map(c => h("div", { class: "row" }, h("span", { class: `r-${c.result}`, style: "flex:none" }, RESULT[c.result]), h("span", { class: "grow" }, c.name, c.detail ? `（${c.detail}）` : "")))),
     moved.length > 0 && h("div", null, h("div", { class: "hint" }, `${ICON.moved} 動いたタスク`),
@@ -2143,7 +2160,7 @@ function renderPast() {
     h("p", { class: "lead" }, mk(run.status), h("span", null, run.title)),
     h("div", { class: "chips" },
       h("span", { class: `tag s-${run.status}` }, h("span", { class: "mark" }, STATUS[run.status]?.mark), " ", STATUS[run.status]?.label),
-      h("span", { class: "tag num" }, fmt(run.finished_at)),
+      run.finished_at && h("span", { class: "tag num" }, fmt(run.finished_at)),  // a running run has no time yet
       checks.length > 0 && h("span", { class: "tag" }, "確認 ", h("b", { class: "num" }, `${passed}/${checks.length}`)),
       git?.files.length > 0 && h("span", { class: "tag num" }, `${git.files.length} ファイル `, h("span", { class: "plus" }, `+${gAdd}`), " ", h("span", { class: "minus" }, `−${gDel}`)),
       ndCount > 0 && h("span", { class: "tag" }, `${ICON.notDone} 残した `, h("b", { class: "num" }, ndCount)),
@@ -2270,6 +2287,8 @@ function talkView(t, n) {
 }
 function kanbanView(st) {
   const tasks = st?.tasks || [];
+  const into = leftovers(upToChosen()).filter(x => x.state === "task");
+  const routed = id => into.filter(x => x.task === id);
   const shown = fSection != null ? tasks.filter(t => t.section === fSection) : tasks;
   const nextTask = st?.run?.next?.task;
   if (!shown.length) return h("div", { class: "hint" }, fSection != null ? "このセクションのタスクはありません。" : "タスク（tasks）が書かれていません。");
@@ -2284,7 +2303,9 @@ function kanbanView(st) {
           h("button", { class: "btn small filter", type: "button", "aria-pressed": fTask === t.id ? "true" : "false",
             onclick: () => { fTask = fTask === t.id ? null : t.id; render(); if (fTask) closeDlg(document.getElementById("dlg")); else reopenDlg(); } },
             fTask === t.id ? "絞り込み中 ✕" : "履歴で見る")),
-        t.detail && h("details", null, h("summary", null, "くわしく"), h("p", null, t.detail))))); }))];
+        t.detail && h("details", null, h("summary", null, "くわしく"), h("p", null, t.detail)),
+        routed(t.id).length > 0 && h("details", null, h("summary", null, `${ICON.notDone} 回された残したこと（${routed(t.id).length}）`),
+          h("ul", { class: "kroute" }, routed(t.id).map(x => h("li", null, x.title))))))); }))];
 }
 const DIFF_OPEN_LINES = 600;  // small diffs open every file at once
 function diffView(git, text) {
@@ -2321,6 +2342,26 @@ const DLG = {
     foot: "その回の時点のタスク。「履歴で見る」でそのタスクを動かした回を履歴で光らせる。Esc で閉じる",
     load: async n => kanbanView(n.id === "now" ? latest : String(n.id) === String(snap?.id) ? snap.status : (await src.run(n.id))?.status) },
 };
+DLG.left = { has: () => true, icon: ICON.ledger, name: "残したことの一覧",
+  label: n => [`${ICON.ledger} 残したこと（全体）`, h("span", { class: "cnt" }, h("span", { class: "num" }, n.left.all), " 件"),
+    n.left.left > 0 && h("span", { class: "cnt" }, `${ICON.left} 全体の置き去り `, h("span", { class: "num" }, n.left.left))],
+  foot: "プロジェクト全体。その回の時点まで。「その回へ」で履歴を移る。Esc で閉じる",
+  load: async n => leftView(n) };
+DLG.runs = { has: () => true, icon: "☰", name: "回の一覧",
+  foot: "題やセクションで絞り込み、押すとその回を見る。Esc で閉じる",
+  load: async () => runsView() };
+// every run by title, newest first: the dots of the history carry no words
+function runsView() {
+  const all = nodes().slice().reverse(), cur = String(chosenId());
+  const list = h("div", { class: "runlist" });
+  const draw = q => put(list, all.filter(n => !q || `${n.title} ${n.section_id || ""}`.toLowerCase().includes(q.toLowerCase())).map(n =>
+    h("button", { class: `runrow${String(n.id) === cur ? " hit" : ""}`, type: "button",
+      onclick: () => { closeDlg(document.getElementById("dlg")); choose(String(n.id) === String(latestId()) ? null : n.id); } },
+      mk(n.status), h("span", { class: "num", style: "flex:none" }, fmt(n.finished_at)), n.section_id && h("span", { class: "tag" }, n.section_id),
+      h("span", { class: "grow" }, n.title))));
+  draw("");
+  return [h("input", { class: "runq", type: "search", placeholder: "題やセクションで絞り込む", "aria-label": "回を絞り込む", oninput: e => draw(e.target.value) }), list];
+}
 const TABS = ["talk", "diff"];  // a run's conversation and its diff are read side by side
 const dlgButton = (kind, n) => h("button", { class: `btn dlg-open k-${kind}`, type: "button", onclick: () => openDlg(kind, n.id) }, DLG[kind].label(n));
 let dlgSeq = 0, dlgNow = null;
@@ -2387,7 +2428,7 @@ function renderNow() {
   if (sec) {
     const done = sec.steps.filter(x => x.state === "done").length;
     kids.push(h("div", { class: "prog" },
-      h("div", { class: "prog-h" }, h("b", null, "取り組み範囲: ", sec.title), h("span", { class: "num" }, `${done}/${sec.steps.length}`)),
+      h("div", { class: "prog-h" }, h("b", null, "取り組み範囲: ", sec.title), h("span", { class: "num" }, `段取り ${done}/${sec.steps.length}`)),
       h("div", { class: "segs", role: "img", "aria-label": `${sec.steps.length} 段のうち ${done} 段が完了` }, sec.steps.map(x => h("span", { class: `seg ${x.state}`, title: `${STEP[x.state]} ${x.title}` }))),
       h("div", { class: "chips" }, h("button", { class: "btn small filter", type: "button", "aria-pressed": fSection === sid ? "true" : "false",
         onclick: () => { fSection = fSection === sid ? null : sid; render(); } }, fSection === sid ? "絞り込み中 ✕" : "履歴をこの範囲で絞る"))));
@@ -2404,29 +2445,49 @@ function renderNow() {
   if (sec) kids.push(fold("steps", `段取り（${sec.steps.length}）`, sec.steps.map(x => h("div", { class: "row" }, h("span", { style: "flex:none" }, STEP[x.state]), h("span", { class: "grow", style: x.state === "doing" ? "font-weight:700" : null }, x.title)))));
   if (tasks.length) {
     const n = nodes().find(x => String(x.id) === String(snap.id)) || { id: snap.id };
-    kids.push(h("div", { class: "chips" }, dlgButton("kanban", { ...n, kanban: fSection != null ? tasks.filter(t => t.section === fSection).length : tasks.length })));
+    kids.push(h("div", { class: "chips" }, dlgButton("kanban", { ...n, kanban: fSection != null ? tasks.filter(t => t.section === fSection).length : tasks.length }),
+      dlgButton("left", { ...n, left: leftCount(upToChosen()) })));
+  } else {
+    const n = nodes().find(x => String(x.id) === String(snap.id)) || { id: snap.id };
+    kids.push(h("div", { class: "chips" }, dlgButton("left", { ...n, left: leftCount(upToChosen()) })));
   }
   if (kids.length === 1) kids.push(h("p", { class: "hint" }, "取り組み範囲（section）もタスク（tasks）も書かれていません。"));
   put(el, ...kids);
 }
 
+// Left-over items grouped by where they went; secTag adds the section of each item (the whole-project list).
+function leftGroups(items, secTag) {
+  const by = k => items.filter(x => x.state === k);
+  const later = Object.fromEntries(leftovers(nodes()).map(x => [x.title, x]));  // looking back: where it went afterwards
+  const group = (name, xs, row) => xs.length > 0 && [h("div", { class: "ledger-h" }, `${name}（${xs.length}）`), xs.map(row)];
+  const why = x => x.reason && h("span", { class: "why" }, ` — ${x.reason}`);
+  const sec = x => secTag && x.run.section_id && h("span", { class: "tag" }, x.run.section_id);
+  return [
+    group(`${ICON.left} 置き去り（行き先未定）`, by("left"), x => h("div", { class: "row lrow" }, h("span", { class: "grow" }, x.title, why(x)),
+      later[x.title]?.state !== "left" && destTag(x, later[x.title]), sec(x), h("span", { class: "tag num" }, fmt(x.run.finished_at)), goRun(x.run))),
+    group(`→ ${ICON.kanban} 続きはタスクへ`, by("task"), x => h("div", { class: "row lrow" }, h("span", { class: "grow" }, x.title), destTag(x), sec(x))),
+    group(`${ICON.drop} やらないと決めた`, by("drop"), x => h("div", { class: "row lrow" }, h("span", { class: "grow" }, x.title, why(x)), sec(x))),
+  ];
+}
+function leftView(n) {
+  const all = nodes(), i = all.findIndex(x => String(x.id) === String(n.id));
+  const items = leftovers(i < 0 ? all : all.slice(0, i + 1));
+  if (!items.length) return h("div", { class: "hint" }, "残したこと（run.not_done）はまだありません。");
+  return [h("div", { class: "hint" }, "この回までに残したことを、行き先ごとに。同じ題で後から書き直したものは、後の行き先になる。"), leftGroups(items, true)];
+}
+const leftCount = list => { const items = leftovers(list); return { all: items.length, left: items.filter(x => x.state === "left").length }; };
+
 // What this section did and left, up to the chosen run: done runs, moved to a task, dropped, left behind.
 function ledgerBlock(sid) {
   const list = upToChosen(), inSec = list.filter(n => n.section_id === sid), items = leftovers(list, sid);
-  const by = k => items.filter(x => x.state === k);
-  const left = by("left"), toTask = by("task"), dropped = by("drop");
-  const later = Object.fromEntries(leftovers(nodes()).map(x => [x.title, x]));  // looking back: where it went afterwards
+  const left = items.filter(x => x.state === "left");
   if (!inSec.length) return [];
   const group = (name, xs, row) => xs.length > 0 && [h("div", { class: "ledger-h" }, `${name}（${xs.length}）`), xs.map(row)];
-  const why = x => x.reason && h("span", { class: "why" }, ` — ${x.reason}`);
   return [
     left.length > 0 && h("div", { class: "chips" }, h("span", { class: "tag d-left" }, `${ICON.left} この範囲の置き去り `, h("b", { class: "num" }, left.length)),
       h("span", { class: "hint" }, "行き先（タスクか見送り）が決まっていない")),
     fold("ledger", `${ICON.ledger} この範囲の記録（${inSec.length} 回）`, [
-      group(`${ICON.left} 置き去り（行き先未定）`, left, x => h("div", { class: "row lrow" }, h("span", { class: "grow" }, x.title, why(x)),
-        later[x.title]?.state !== "left" && destTag(x, later[x.title]), h("span", { class: "tag num" }, fmt(x.run.finished_at)), goRun(x.run))),
-      group(`→ ${ICON.kanban} 続きはタスクへ`, toTask, x => h("div", { class: "row lrow" }, h("span", { class: "grow" }, x.title), destTag(x))),
-      group(`${ICON.drop} やらないと決めた`, dropped, x => h("div", { class: "row lrow" }, h("span", { class: "grow" }, x.title, why(x)))),
+      leftGroups(items, false),
       group(`${ICON.did} した回`, inSec, n => h("div", { class: "row lrow" }, mk(n.status), h("span", { class: "grow" }, n.title), h("span", { class: "tag num" }, fmt(n.finished_at)), goRun(n))),
     ]),
   ];

@@ -12,6 +12,8 @@ import hashlib
 import json
 import os
 import sqlite3
+import time
+from datetime import datetime
 from pathlib import Path
 
 from . import gitsnap
@@ -145,6 +147,65 @@ def insert(con: sqlite3.Connection, d: dict, raw: str | None = None) -> bool:
     return cur.rowcount == 1
 
 
+def _same_run(con: sqlite3.Connection, project_path: str, rid: str | None) -> sqlite3.Row | None:
+    if not rid:
+        return None
+    return con.execute("SELECT id, run_key, recorded_at FROM runs WHERE project_path = ? AND json_extract(raw_json, '$.run.id') = ?"
+                       " ORDER BY id DESC LIMIT 1", (project_path, rid)).fetchone()
+
+
+def upsert(con: sqlite3.Connection, d: dict) -> bool:
+    """Add the run, or replace the stored one with the same run.id (a fix of the same run).
+
+    Returns True when something was written. The same content twice writes nothing.
+    """
+    old = _same_run(con, d["project"].get("path") or d["project"]["name"], d["run"].get("id"))
+    if old is None:
+        return insert(con, d)
+    key = run_key(d)
+    if old["run_key"] == key:
+        return False
+    run, src, sec = d["run"], d["source"], d.get("section") or None
+    con.execute(
+        "UPDATE runs SET run_key=?, recorded_at=?, finished_at=?, project=?, tool=?, model=?, written_by=?, status=?, title=?,"
+        " asks_count=?, checks_failed=?, raw_json=?, section_id=?, section_title=? WHERE id=?",
+        (key, st.now_iso(), run["finished_at"], d["project"]["name"], src["tool"], src.get("model"), src.get("written_by"),
+         run["status"], run["title"], len(run.get("asks") or []),
+         sum(1 for c in run.get("checks") or [] if c.get("result") == "fail"),
+         json.dumps(d, ensure_ascii=False), st.section_id(sec), sec.get("title") if sec else None, old["id"]))
+    con.commit()
+    return True
+
+
+def _epoch(iso: str | None) -> float | None:
+    try:
+        return datetime.fromisoformat(str(iso)).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def new_id() -> str:
+    # microseconds: two runs recorded within one second must not share an id (the same id is the same run)
+    return datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+
+
+def stamp(d: dict, turn_started: float | None = None, run_id: str | None = None) -> None:
+    """rb, not the LLM, decides when a run finished and which run it is.
+
+    An LLM does not know the time; its finished_at was off by hours in real use. With the turn start
+    known (the Claude hook), a time outside this turn is replaced by now. run_id is the id the hook keeps
+    for this turn: the LLM's own id is not used then, because it is often copied from the last run.
+    """
+    run, now = d["run"], time.time()
+    fin = _epoch(run.get("finished_at"))
+    if fin is None or (turn_started is not None and not turn_started - 2 <= fin <= now + 60):
+        run["finished_at"] = st.now_iso()
+    if run_id:
+        run["id"] = run_id
+    elif not run.get("id"):
+        run["id"] = new_id()
+
+
 def query(con: sqlite3.Connection, project_path: str | None = None, status: str | None = None,
           tool: str | None = None, limit: int = 20, exclude_key: str | None = None) -> list[sqlite3.Row]:
     where, args = [], []
@@ -160,9 +221,11 @@ def query(con: sqlite3.Connection, project_path: str | None = None, status: str 
     return rows[::-1]  # oldest first
 
 
-def record_file(root: Path, default_writer: str = "llm", talk: list | None = None) -> tuple[list[str], bool]:
+def record_file(root: Path, default_writer: str = "llm", talk: list | None = None,
+                turn_started: float | None = None, run_id: str | None = None) -> tuple[list[str], bool]:
     """Check root/.responseboard/status.json, add it to the database and fill its history.
-    talk (see talk.py) is saved with the run when it is new.
+    talk (see talk.py) is saved with the run when it is new or changed. turn_started (epoch) is when
+    the user's turn began and run_id the id of this turn's run, if the caller keeps them; see stamp().
 
     Returns (errors, inserted). Nothing is written when errors is not empty.
     """
@@ -181,7 +244,8 @@ def record_file(root: Path, default_writer: str = "llm", talk: list | None = Non
     d["source"].setdefault("written_by", default_writer)
     con = connect()
     try:
-        inserted = insert(con, d)
+        stamp(d, turn_started, run_id)
+        inserted = upsert(con, d)
         key = run_key(d)
         if inserted:
             add_git(con, root, key)
@@ -234,6 +298,42 @@ def _dest(x: dict) -> str:
     return "task" if x.get("task") else "drop" if x.get("drop") else "left"
 
 
+SKIPPED_NEXT = "前の回の「次にやる事」。この回では扱われなかった"
+
+
+def skipped_next(prev: dict, cur: dict) -> dict | None:
+    """prev's run.next as a left-behind item, when cur neither did it, kept it as next, nor said where it went."""
+    nxt = (prev.get("run") or {}).get("next") or {}
+    title = str(nxt.get("title") or "")[:60]
+    if not title:
+        return None
+    run = cur.get("run") or {}
+    if run.get("from_next"):  # the run says it took up the previous next
+        return None
+    for other in (run.get("title"), (run.get("next") or {}).get("title")):
+        if other and (title in other or other in title):
+            return None
+    if any(isinstance(x, dict) and x.get("title") == title for x in run.get("not_done") or []):
+        return None
+    tid = nxt.get("task")
+    if tid:
+        col = lambda d: next((t.get("column") for t in d.get("tasks") or [] if isinstance(t, dict) and t.get("id") == tid), None)
+        if (run.get("next") or {}).get("task") == tid or col(prev) != col(cur):
+            return None
+    return {"title": title, "reason": SKIPPED_NEXT, "auto": True}
+
+
+def with_skipped(raws: list[dict]) -> list[list[dict]]:
+    """not_done of each run (oldest first), with the skipped next of the run before added."""
+    out, prev = [], None
+    for d in raws:
+        nd = [x for x in (d.get("run") or {}).get("not_done") or [] if isinstance(x, dict) and x.get("title")]
+        auto = skipped_next(prev, d) if prev and "run" in prev else None
+        out.append(nd + ([auto] if auto else []))
+        prev = d
+    return out
+
+
 def leftovers(con: sqlite3.Connection, project_path: str) -> list[dict]:
     """Every not_done item of a project, oldest first, with where it went (state task / drop / left).
 
@@ -243,14 +343,14 @@ def leftovers(con: sqlite3.Connection, project_path: str) -> list[dict]:
     rows = con.execute("SELECT id, finished_at, title, section_id, raw_json FROM runs WHERE project_path = ?"
                        " ORDER BY finished_at, id", (project_path,)).fetchall()
     by_title: dict[str, dict] = {}
+    raws = []
     for r in rows:
         try:
-            nd = (json.loads(r["raw_json"]).get("run") or {}).get("not_done") or []
+            raws.append(json.loads(r["raw_json"]))
         except ValueError:
-            continue
+            raws.append({})
+    for r, nd in zip(rows, with_skipped(raws)):
         for x in nd:
-            if not isinstance(x, dict) or not x.get("title"):
-                continue
             t = str(x["title"])
             first = by_title.pop(t, {}).get("first_run", r["id"])
             by_title[t] = {"title": t, "reason": x.get("reason"), "state": _dest(x), "task": x.get("task"),
@@ -280,11 +380,19 @@ def overview(con: sqlite3.Connection, project_path: str, limit: int = 500) -> li
         " LEFT JOIN run_git g ON g.run_id = r.id LEFT JOIN run_talk t ON t.run_id = r.id"
         " WHERE r.project_path = ? ORDER BY r.finished_at DESC, r.id DESC LIMIT ?", (project_path, limit)).fetchall()
     out = []
+    raws = []
     for r in rows:
+        try:
+            raws.append(json.loads(r["raw_json"]))
+        except ValueError:
+            raws.append({})
+    left = with_skipped(raws[::-1])[::-1]  # the skipped next is found oldest first
+    for r, nd in zip(rows, left):
         item = {k: r[k] for k in r.keys() if k not in ("raw_json", "files_json", "talk")}
         if r["talk"]:
             item["talk"] = r["talk"]
         item.update(_light(r["raw_json"]))
+        item["not_done"] = [{k: x[k] for k in ("title", "reason", "task", "drop", "auto") if x.get(k)} for x in nd]
         if r["files_json"] is not None:
             files = json.loads(r["files_json"])
             item["git"] = {"files": len(files), "add": sum(f["add"] or 0 for f in files),

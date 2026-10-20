@@ -37,11 +37,11 @@
 
     "run": {
       "type": "object",
-      "required": ["status", "title", "finished_at"],
+      "required": ["status", "title"],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string" },
-        "finished_at": { "type": "string", "format": "date-time" },
+        "id": { "type": "string", "description": "Leave it out: rb gives each run an id. The same id again replaces that run (a fix of the same run)." },
+        "finished_at": { "type": "string", "format": "date-time", "description": "Leave it out: rb writes the time it records the run. An LLM does not know the time." },
         "status": { "$ref": "#/$defs/runStatus" },
         "title": { "type": "string", "maxLength": 40, "description": "What was done, one line." },
         "summary": { "type": "string", "maxLength": 120, "description": "At most two short sentences." },
@@ -101,6 +101,7 @@
           }
         },
         "notes": { "type": "string", "description": "The long explanation. Folded by default." },
+        "from_next": { "type": "boolean", "description": "true when this run took up the previous run's next. A previous next that this run neither took up, kept as next, nor wrote in not_done is shown as left behind." },
         "next": {
           "type": "object",
           "required": ["title"],

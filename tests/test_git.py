@@ -186,6 +186,37 @@ class LeftoversTest(unittest.TestCase):
             con.close()
         self.assertEqual(states, {"見た目": "drop", "公開": "task"})
 
+    def test_a_next_the_following_run_did_not_take_up_is_left_behind(self):
+        a = status("one", finished="2026-10-20T10:00:00+09:00")
+        a["run"]["next"] = {"title": "本物で確かめる"}
+        b = status("two", finished="2026-10-20T11:00:00+09:00")
+        b["run"]["next"] = {"title": "公開する", "task": "t1"}
+        c = status("three", finished="2026-10-20T12:00:00+09:00")   # t1 moved: 公開する was taken up
+        c["tasks"] = [{"id": "t1", "title": "x", "column": "done"}]
+        self.assertEqual(store.skipped_next(a, b)["title"], "本物で確かめる")
+        self.assertIsNone(store.skipped_next(b, c))
+        b2 = json.loads(json.dumps(b))
+        b2["run"]["not_done"] = [{"title": "本物で確かめる", "drop": True}]
+        self.assertIsNone(store.skipped_next(a, b2))  # said where it went
+        b3 = json.loads(json.dumps(b))
+        b3["run"]["from_next"] = True
+        self.assertIsNone(store.skipped_next(a, b3))  # said it took it up
+        b4 = json.loads(json.dumps(b))
+        b4["run"]["title"] = "本物で確かめる（全体の入れ方）"
+        self.assertIsNone(store.skipped_next(a, b4))  # the title carries it
+        for d in (a, b, c):
+            st.write_json(st.status_path(self.proj), d)
+            self.assertEqual(store.record_file(self.proj)[0], [])
+        out = st.read_json(st.status_path(self.proj))
+        self.assertIn("本物で確かめる", [x["title"] for x in out["left_behind"]])
+        con = store.connect()
+        try:
+            ov = store.overview(con, st.norm_path(self.proj))
+        finally:
+            con.close()
+        two = next(x for x in ov if x["title"] == "two")
+        self.assertTrue(any(x.get("auto") and x["title"] == "本物で確かめる" for x in two["not_done"]))
+
 
 if __name__ == "__main__":
     unittest.main()

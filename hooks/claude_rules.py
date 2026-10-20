@@ -23,7 +23,8 @@ def rules() -> str:
 - `run.title` は 40 字まで。したことを 1 行で
 - `run.summary` は 120 字まで。長い説明は `run.notes` に入れる
 - `run.asks` には、ユーザーの判断が要ることだけを入れる（選択肢 2〜4 個）。あれば `run.status` は `needs_you`、なければ空にする
-- `run.checks` に確かめたこと（pass / fail / skip）、`run.changes` に変えたファイルを入れる
+- `run.checks` に確かめたこと（pass / fail / skip）を入れる。`run.changes`（変えたファイル）は、git のあるプロジェクトでは
+  rb が git から取るので書かなくてよい
 - `run.not_done` に今回やらずに残したこと（続きに回すもの・できなかったもの・やらないと決めたもの）と理由（`title` 60 字・`reason` 120 字）。
   それぞれに行き先を付ける: 続きをやるなら `tasks` に未着手のタスクを置いて `task` にその id、やらないと決めたなら `drop: true`。
   一部だけやったときは、タスクを分けて残りを未着手に置く。行き先の無いものはボードで「置き去り」と出る
@@ -37,7 +38,9 @@ def rules() -> str:
 - git の差分は rb が記録するので書かない
 - `source.tool` は `claude-code`、`source.written_by` は `llm`
 - `history` はフックが履歴のデータベースから埋めるので書かない
-- `run.finished_at` は `+09:00` 付きの ISO 8601
+- `run.id` と `run.finished_at` は書かない（rb が記録のときに入れる。LLM は今の時刻を知らない）
+- 前の回の `run.next` に取りかかったら `run.from_next: true`。やらなかったら、同じ `title` で `not_done` に書いて行き先を付ける。
+  どちらも無いと、自動で置き去りになる
 - ユーザーが「このフォルダでは要らない」と言ったときだけ、`{posix(RB_ROOT / "scripts" / "rb.cmd")} --dir <フォルダ> ignore` で
   対象から外す（外す一覧は `%USERPROFILE%/.responseboard/ignore`）。自分の判断では外さない
 {END}"""

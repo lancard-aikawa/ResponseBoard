@@ -80,11 +80,13 @@ def validate(d) -> list[str]:
         errs.append(f"run.title is {len(title)} chars; keep it to {TITLE_MAX}")
     if len(run.get("summary") or "") > SUMMARY_MAX:
         errs.append(f"run.summary is over {SUMMARY_MAX} chars; move the rest to run.notes")
-    try:
-        if datetime.fromisoformat(str(run.get("finished_at"))).tzinfo is None:
-            errs.append("run.finished_at needs a UTC offset such as +09:00")
-    except ValueError:
-        errs.append("run.finished_at must be an ISO 8601 date-time with offset")
+    # rb fills finished_at when it is left out, so only a written one is checked
+    if run.get("finished_at") is not None:
+        try:
+            if datetime.fromisoformat(str(run["finished_at"])).tzinfo is None:
+                errs.append("run.finished_at needs a UTC offset such as +09:00")
+        except ValueError:
+            errs.append("run.finished_at must be an ISO 8601 date-time with offset")
     asks = run.get("asks") or []
     if run.get("status") == "needs_you" and not asks:
         errs.append('run.status is "needs_you" but run.asks is empty')
@@ -114,6 +116,8 @@ def validate(d) -> list[str]:
             errs.append(f'run.not_done[{i}].task "{x["task"]}" is not an id in tasks')
         if x.get("drop") is not None and not isinstance(x["drop"], bool):
             errs.append(f"run.not_done[{i}].drop must be true or false")
+    if run.get("from_next") is not None and not isinstance(run["from_next"], bool):
+        errs.append("run.from_next must be true or false")
     nxt = run.get("next")
     if nxt is not None:
         if not isinstance(nxt, dict) or not nxt.get("title"):

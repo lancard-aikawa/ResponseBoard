@@ -149,6 +149,35 @@ const btn = (scope, label) => [...scope.querySelectorAll("button")].find(b => b.
   ok(lg3.textContent.includes("続きはタスクへ（1）") && lg3.textContent.includes("やらないと決めた（1）"), "left: section 3's record has 1 to a task and 1 dropped");
   lg3.open = false;
 
+  // evaluation fixes (2026-10-20): what a reader without context got stuck on
+  const legend = d.querySelector(".flow-legend");
+  ok(legend && /失敗\s*1/.test(legend.textContent) && /全\s*7\s*回/.test(legend.textContent), "F: the history legend counts each kind (失敗 1, 全 7 回)");
+  ok(text("now").includes("段取り "), "H: the section progress says it counts 段取り");
+  const didFold = d.querySelector('#past details[data-key="did"]');
+  ok(didFold.textContent.includes("git から"), "D: changed files come from git when there is git");
+  // G: find a run by its title
+  btn(d.getElementById("flow"), "回の一覧").click(); await tick();
+  const rd = d.getElementById("dlg");
+  ok(rd.open && rd.querySelectorAll(".runrow").length === 7, "G: the run list shows all 7 runs");
+  const q = rd.querySelector(".runq"); q.value = "API"; q.dispatchEvent(new w.Event("input")); await tick();
+  ok(rd.querySelectorAll(".runrow").length === 2, `G: filtering by "API" leaves 2 runs (got ${rd.querySelectorAll(".runrow").length})`);
+  rd.querySelector(".runrow").click(); await tick();
+  ok(!rd.open && text("past").includes("天気 API から 7 日分を出した"), "G: choosing a row shows that run and closes the list");
+  clean("run list");
+  // E: the whole project's left-over list
+  d.querySelector('.node[data-id="7"]').click(); await tick();
+  btn(d.getElementById("now"), "残したこと").click(); await tick();
+  ok(rd.open && rd.textContent.includes("見た目の調整") && rd.textContent.includes("アイコン") && rd.textContent.includes("第 1 段"),
+    "E: the left-over list spans every section, with the section of each item");
+  ok(rd.textContent.includes("置き去り（行き先未定）（1）"), "E: one item is left behind in the whole project");
+  btn(rd, "閉じる").click();
+  // I: a task card lists what was routed to it
+  btn(d.getElementById("now"), "カンバン").click(); await tick();
+  const t4 = [...rd.querySelectorAll(".kcard")].find(c => c.textContent.includes("天気 API から取る"));
+  ok(t4 && t4.textContent.includes("回された残したこと（2）"), "I: the task card of t4 lists the 2 items routed to it");
+  btn(rd, "閉じる").click();
+  clean("left list and kanban");
+
   // markdown edge cases, rendered with the page's own md()
   const mdHtml = t => { const div = d.createElement("div"); div.append(...w.md(t)); return div; };
   let m = mdHtml("## 題\n\n- a\n  - b\n- c\n\n1. x\n2. y\n\n```js\nconst a = '<b>';\n```\n\n[link](javascript:alert(1)) [ok](https://example.com) <img src=x onerror=alert(1)>");

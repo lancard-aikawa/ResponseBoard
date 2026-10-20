@@ -86,7 +86,8 @@ def cmd_stop(payload: dict) -> None:
     turn = root / ".responseboard" / "turn.json"
     if not turn.exists():
         return  # no turn start recorded (hook added mid-session); nothing to compare
-    started = float(st.read_json(turn).get("started_at") or 0)
+    tj = st.read_json(turn)
+    started = float(tj.get("started_at") or 0)
     path = st.status_path(root)
     how = ("Before finishing, write .responseboard/status.json for this turn "
            f"(shape: {RB_ROOT / 'schema' / 'status.schema.json'}, example: {RB_ROOT / 'samples' / 'status.sample.json'}; "
@@ -96,9 +97,13 @@ def cmd_stop(payload: dict) -> None:
     # 2 s slack: on Windows the file time and time.time() can disagree by a few ms to a tick.
     if path.stat().st_mtime < started - 2:
         return block(how + "The file was not updated during this turn.")
+    # one id per turn: a second Stop in the same turn (after a fix) replaces that run instead of adding one
+    rid = tj.get("run_id") or store.new_id()
     try:
         talk = turn_talk(payload["transcript_path"], started, root) if payload.get("transcript_path") else None
-        errs, _ = store.record_file(root, default_writer="llm", talk=talk)
+        errs, _ = store.record_file(root, default_writer="llm", talk=talk, turn_started=started, run_id=rid)
+        if not errs and tj.get("run_id") != rid:
+            st.write_json(turn, {**tj, "run_id": rid})
     except sqlite3.Error as e:
         # The run itself is fine; only the history could not be saved. Do not block the user.
         return emit({"systemMessage": f"ResponseBoard: history database error ({e}); status.json was not recorded."})

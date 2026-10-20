@@ -52,7 +52,7 @@ def build(root: Path, state: str, title: str, args) -> dict:
         prev = st.read_json(path)
     except (FileNotFoundError, ValueError):
         prev = {}
-    run = {"id": datetime.now().strftime("%Y%m%d-%H%M%S"), "finished_at": st.now_iso(), "status": state, "title": title}
+    run = {"id": store.new_id(), "finished_at": st.now_iso(), "status": state, "title": title}
     if args.summary:
         run["summary"] = args.summary
     run["asks"] = [parse_ask(i, s) for i, s in enumerate(getattr(args, "ask", None) or [])]
