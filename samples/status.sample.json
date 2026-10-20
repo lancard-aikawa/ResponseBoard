@@ -1,0 +1,181 @@
+{
+  "schema": "responseboard/status@1",
+  "project": {
+    "name": "ResponseBoard",
+    "path": "C:/Repos/claude/ClaudeResult"
+  },
+  "source": {
+    "tool": "claude-code",
+    "model": "claude-opus-5-5",
+    "written_by": "llm"
+  },
+  "run": {
+    "id": "2026-10-19-04",
+    "finished_at": "2026-10-19T16:10:00+09:00",
+    "status": "needs_you",
+    "title": "スキーマ案と見本ボードを作った",
+    "summary": "status.json の形を決め、見本データで画面を作った。進め方を 2 つ選んでほしい。",
+    "asks": [
+      {
+        "id": "rename",
+        "question": "フォルダ名を ClaudeResult から ResponseBoard に変えますか？",
+        "options": [
+          "変える",
+          "このまま"
+        ],
+        "recommended": 0
+      },
+      {
+        "id": "next",
+        "question": "次に作るのはどちらですか？",
+        "options": [
+          "Stop フックで status.json を書かせる",
+          "ステータスラインに信号を出す"
+        ],
+        "recommended": 0
+      }
+    ],
+    "checks": [
+      {
+        "name": "見本をスキーマで検証",
+        "result": "pass",
+        "detail": "エラー 0 件"
+      },
+      {
+        "name": "Claude Code から実際に出力",
+        "result": "skip",
+        "detail": "まだつないでいない"
+      }
+    ],
+    "changes": [
+      {
+        "path": "schema/status.schema.json",
+        "kind": "added"
+      },
+      {
+        "path": "samples/status.sample.json",
+        "kind": "added"
+      },
+      {
+        "path": "board/responseboard.html",
+        "kind": "added"
+      },
+      {
+        "path": "README.md",
+        "kind": "added"
+      }
+    ],
+    "notes": "画面は status.json だけを読み、どの LLM が書いたかで動きを変えない。source.written_by で、LLM が自分で書いたのか、フックか、最終応答から抜き出したのかを残す。抜き出しの結果は外れることがあるので、画面で区別できるようにした。",
+    "next": {
+      "title": "Stop フックで status.json を書かせる",
+      "detail": "返事の終わりに status.json が書かれたかを Stop フックで確かめ、無い・古い・形が違うときは一度だけ止めて理由を返す。CLAUDE.md の決まりだけでは書き忘れが出るため。終わりの条件: 書き忘れたときに止まり、直すと通ることをテストで確かめる。",
+      "steps": [
+        "hooks/rb_hook.py に stop を足す",
+        "開始時刻を UserPromptSubmit で記録する",
+        "古さを開始時刻と比べて判定する",
+        "tests/test_hook.py で止まる・通るを確かめる"
+      ],
+      "task": "t4"
+    },
+    "not_done": [
+      {
+        "title": "Claude Code から実際に出力",
+        "reason": "まだつないでいない"
+      }
+    ]
+  },
+  "section": {
+    "id": "第 1 段",
+    "title": "第 1 段: 形と見た目を決める",
+    "steps": [
+      {
+        "title": "名前を決める",
+        "state": "done"
+      },
+      {
+        "title": "スキーマ案",
+        "state": "done"
+      },
+      {
+        "title": "見本ボード",
+        "state": "done"
+      },
+      {
+        "title": "見た目の確認",
+        "state": "doing"
+      },
+      {
+        "title": "スキーマを固める",
+        "state": "todo"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "title": "名前を ResponseBoard に決める",
+      "column": "done",
+      "section": "第 1 段"
+    },
+    {
+      "id": "t2",
+      "title": "status.json のスキーマ案",
+      "column": "done",
+      "section": "第 1 段"
+    },
+    {
+      "id": "t3",
+      "title": "見本ボード",
+      "column": "review",
+      "section": "第 1 段",
+      "asks": 2,
+      "detail": "status.json だけを読んで描く 1 枚の HTML。答えが要る項目・段取り・カンバン・くわしくをタブで出す。見た目の確認待ち。"
+    },
+    {
+      "id": "t4",
+      "title": "Claude Code の Stop フックで書き出す",
+      "column": "todo",
+      "section": "第 2 段",
+      "detail": "Claude Code の Stop フックで、status.json の書き忘れを止める。終わりの条件: 書き忘れで止まり、直すと通る。"
+    },
+    {
+      "id": "t5",
+      "title": "ステータスラインに信号を出す",
+      "column": "todo",
+      "section": "第 2 段"
+    },
+    {
+      "id": "t6",
+      "title": "最終応答から抜き出す補助（ローカル LLM）",
+      "column": "todo",
+      "section": "第 3 段",
+      "detail": "最終応答から status.json を抜き出す補助。LLM が書かないツールでもボードに出せるようにする。抜き出しは外れることがあるので written_by を extractor にする。"
+    },
+    {
+      "id": "t7",
+      "title": "2 つ目の LLM（Codex CLI）をつなぐ",
+      "column": "todo",
+      "section": "第 3 段"
+    }
+  ],
+  "history": [
+    {
+      "finished_at": "2026-10-19T15:48:00+09:00",
+      "status": "done",
+      "title": "表し方の相談",
+      "tool": "claude-code"
+    },
+    {
+      "finished_at": "2026-10-19T15:55:00+09:00",
+      "status": "done",
+      "title": "呼び方の確認",
+      "tool": "claude-code"
+    },
+    {
+      "finished_at": "2026-10-19T16:01:00+09:00",
+      "status": "needs_you",
+      "title": "他の LLM への対応案",
+      "tool": "claude-code"
+    }
+  ]
+}

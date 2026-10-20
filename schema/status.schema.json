@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://responseboard.local/schema/status@1",
+  "title": "ResponseBoard status",
+  "description": "One LLM run's result in a shape the board can draw without reading prose. Written by the LLM (instruction file), a hook, or an extractor that reads the final response.",
+  "type": "object",
+  "required": ["schema", "project", "source", "run"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "responseboard/status@1" },
+
+    "project": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "description": "Folder the run worked in. Forward slashes." }
+      }
+    },
+
+    "source": {
+      "type": "object",
+      "required": ["tool"],
+      "additionalProperties": false,
+      "description": "Which LLM tool produced the run. The board shows it but never branches on it.",
+      "properties": {
+        "tool": { "type": "string", "examples": ["claude-code", "codex-cli", "gemini-cli", "ollama"] },
+        "model": { "type": "string" },
+        "session_id": { "type": "string" },
+        "written_by": {
+          "enum": ["llm", "hook", "extractor", "manual"],
+          "description": "llm = the model wrote this file itself; hook = a tool hook wrote it; extractor = built afterwards from the final response text; manual = a person or script wrote it with the rb command."
+        }
+      }
+    },
+
+    "run": {
+      "type": "object",
+      "required": ["status", "title", "finished_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "finished_at": { "type": "string", "format": "date-time" },
+        "status": { "$ref": "#/$defs/runStatus" },
+        "title": { "type": "string", "maxLength": 40, "description": "What was done, one line." },
+        "summary": { "type": "string", "maxLength": 120, "description": "At most two short sentences." },
+        "asks": {
+          "type": "array",
+          "description": "Only decisions that need the user. Empty means nothing to answer.",
+          "items": {
+            "type": "object",
+            "required": ["id", "question", "options"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "question": { "type": "string", "maxLength": 80 },
+              "options": { "type": "array", "minItems": 2, "maxItems": 4, "items": { "type": "string", "maxLength": 40 } },
+              "recommended": { "type": "integer", "minimum": 0, "description": "Index into options." }
+            }
+          }
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "result"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "result": { "enum": ["pass", "fail", "skip"] },
+              "detail": { "type": "string" }
+            }
+          }
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "kind"],
+            "additionalProperties": false,
+            "properties": {
+              "path": { "type": "string" },
+              "kind": { "enum": ["added", "modified", "deleted"] }
+            }
+          }
+        },
+        "not_done": {
+          "type": "array",
+          "description": "What this run left undone on purpose or could not do, with why. Shown next to what was done.",
+          "items": {
+            "type": "object",
+            "required": ["title"],
+            "additionalProperties": false,
+            "properties": {
+              "title": { "type": "string", "maxLength": 60 },
+              "reason": { "type": "string", "maxLength": 120 }
+            }
+          }
+        },
+        "notes": { "type": "string", "description": "The long explanation. Folded by default." },
+        "next": {
+          "type": "object",
+          "required": ["title"],
+          "additionalProperties": false,
+          "description": "What to pick up next, written so that a reader coming back later can start without rereading the conversation.",
+          "properties": {
+            "title": { "type": "string", "maxLength": 40, "description": "The next piece of work, one line." },
+            "detail": { "type": "string", "maxLength": 400, "description": "What it is, why it is next, and what decides when it is done." },
+            "steps": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 80 }, "description": "The first concrete steps, in order." },
+            "task": { "type": "string", "description": "The id of the matching item in tasks, if there is one." }
+          }
+        }
+      }
+    },
+
+    "section": {
+      "type": "object",
+      "required": ["title", "steps"],
+      "additionalProperties": false,
+      "description": "The stretch of work this run belongs to. A project has many sections over time; the history is grouped by them.",
+      "properties": {
+        "id": { "type": "string", "description": "Stable key of the section. Default: the title before \":\" (\"第 4 段: ...\" -> \"第 4 段\"). tasks[].section refers to it." },
+        "title": { "type": "string" },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["title", "state"],
+            "additionalProperties": false,
+            "properties": {
+              "title": { "type": "string", "maxLength": 24 },
+              "state": { "$ref": "#/$defs/stepState" }
+            }
+          }
+        }
+      }
+    },
+
+    "tasks": {
+      "type": "array",
+      "description": "Whole-project kanban.",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "column"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string", "maxLength": 40 },
+          "column": { "enum": ["todo", "doing", "review", "done"] },
+          "section": { "type": "string", "description": "The id of the section this task belongs to." },
+          "asks": { "type": "integer", "minimum": 0, "description": "Open questions on this task." },
+          "detail": { "type": "string", "maxLength": 400, "description": "What the task is and what decides when it is done. Carried over between runs with the rest of tasks." }
+        }
+      }
+    },
+
+    "history": {
+      "type": "array",
+      "description": "Earlier runs of this project, newest last. Filled from the history database by rb; do not write it by hand.",
+      "items": {
+        "type": "object",
+        "required": ["finished_at", "status", "title"],
+        "additionalProperties": false,
+        "properties": {
+          "finished_at": { "type": "string", "format": "date-time" },
+          "status": { "$ref": "#/$defs/runStatus" },
+          "title": { "type": "string" },
+          "tool": { "type": "string" }
+        }
+      }
+    }
+  },
+
+  "$defs": {
+    "runStatus": {
+      "enum": ["done", "needs_you", "failed", "running"],
+      "description": "done = nothing for the user to do; needs_you = asks is not empty; failed = stopped on an error; running = still working."
+    },
+    "stepState": { "enum": ["done", "doing", "todo", "blocked"] }
+  }
+}

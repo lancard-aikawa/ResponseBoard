@@ -1,0 +1,33 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/hooks/rb_hook.py\" prompt",
+            "timeout": 10,
+            "statusMessage": "ResponseBoard: 開始時刻を記録"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/hooks/rb_hook.py\" stop",
+            "timeout": 10,
+            "statusMessage": "ResponseBoard: status.json を確認"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "python \"${CLAUDE_PROJECT_DIR:-.}/hooks/rb_statusline.py\"",
+    "refreshInterval": 5
+  }
+}

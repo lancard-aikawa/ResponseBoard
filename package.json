@@ -1,0 +1,6 @@
+{
+  "name": "responseboard",
+  "private": true,
+  "scripts": { "test": "node tests/check_board.js" },
+  "devDependencies": { "jsdom": "24.1.0" }
+}

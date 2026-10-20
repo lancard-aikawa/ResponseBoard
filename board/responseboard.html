@@ -1,0 +1,1930 @@
+<title>ResponseBoard</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: the latest signal on top, then the history axis (sections as a flow of runs), then three
+   cards for the chosen point in time: past (what was done / not done), present (section and whole
+   project at that time), future (next and questions). Details stay folded. */
+:root {
+  --bg: #eef2f4; --surface: #ffffff; --sunk: #e4eaee; --fg: #16212a; --muted: #566573; --line: #cdd6dd;
+  --accent: #1b5f84; --accent-fg: #ffffff; --accent-soft: #dceaf2;
+  --ok: #1d7646; --ok-soft: #ddf0e5; --warn: #9a5800; --warn-soft: #fbecd2;
+  --bad: #b3261e; --bad-soft: #f8dfdc; --run: #2c58b0; --run-soft: #e0e7f7;
+  --add: #1d7646; --add-soft: #e3f4ea; --del: #b3261e; --del-soft: #fbe6e3;
+  --font-body: "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "Consolas", monospace;
+  --r: 8px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f151b; --surface: #17202a; --sunk: #121a22; --fg: #e4ebf1; --muted: #98a7b5; --line: #2b3744;
+  --accent: #6cb2dc; --accent-fg: #0a1620; --accent-soft: #1b3142;
+  --ok: #5ccc8c; --ok-soft: #163325; --warn: #efb24f; --warn-soft: #382a11;
+  --bad: #ff8a80; --bad-soft: #3b1b19; --run: #8eb0ff; --run-soft: #1c2946;
+  --add: #5ccc8c; --add-soft: #14301f; --del: #ff8a80; --del-soft: #3a1a18; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0f151b; --surface: #17202a; --sunk: #121a22; --fg: #e4ebf1; --muted: #98a7b5; --line: #2b3744;
+  --accent: #6cb2dc; --accent-fg: #0a1620; --accent-soft: #1b3142;
+  --ok: #5ccc8c; --ok-soft: #163325; --warn: #efb24f; --warn-soft: #382a11;
+  --bad: #ff8a80; --bad-soft: #3b1b19; --run: #8eb0ff; --run-soft: #1c2946;
+  --add: #5ccc8c; --add-soft: #14301f; --del: #ff8a80; --del-soft: #3a1a18; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.6; margin: 0; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 16px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 14px; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+[hidden] { display: none !important; }
+
+/* top bar */
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.brand { font-weight: 700; font-size: 16px; }
+.proj { color: var(--muted); }
+.top .spacer { flex: 1; }
+
+/* not clickable: flat tags (no border) */
+.tag { font-size: 12px; padding: 1px 8px; border-radius: 3px; background: var(--sunk); color: var(--muted); white-space: nowrap; }
+.tag.live { background: var(--ok-soft); color: var(--ok); font-weight: 700; }
+.tag b { color: var(--fg); }
+.plus { color: var(--add); } .minus { color: var(--del); }
+
+/* clickable: border or fill, pointer, hover / press / focus change */
+.btn { font: inherit; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 6px 12px; border-radius: 6px; border: 1px solid var(--accent); background: var(--surface); color: var(--accent);
+  transition: background .12s, transform .05s; text-align: left; }
+.btn:hover { background: var(--accent-soft); }
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible, .node:focus-visible, .sec-btn:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); }
+.btn.primary:hover { filter: brightness(1.1); background: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+.btn.small { padding: 2px 9px; font-size: 12.5px; }
+.btn:disabled { opacity: .45; cursor: default; transform: none; background: var(--surface); }
+.select { font: inherit; font-size: 14px; cursor: pointer; padding: 6px 10px; border-radius: 6px;
+  border: 1px solid var(--accent); background: var(--surface); color: var(--fg); max-width: 100%; }
+.select:hover { background: var(--accent-soft); }
+.select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+/* status colors: shape (● ▲ ✕ ◐) carries the meaning, color repeats it */
+.s-done { --c: var(--ok); --c-soft: var(--ok-soft); }
+.s-needs_you { --c: var(--warn); --c-soft: var(--warn-soft); }
+.s-failed { --c: var(--bad); --c-soft: var(--bad-soft); }
+.s-running { --c: var(--run); --c-soft: var(--run-soft); }
+.mark { color: var(--c); }
+
+/* latest signal (always the newest run, whatever point is chosen below) */
+.signal { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; background: var(--surface);
+  border: 1px solid var(--line); border-left: 8px solid var(--c); border-radius: var(--r); padding: 10px 16px; }
+.lamp { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--c-soft); color: var(--c); font-size: 19px; flex: none; }
+.sig-label { font-weight: 700; font-size: 13px; color: var(--c); white-space: nowrap; }
+.sig-title { font-size: 17px; font-weight: 700; margin: 0; min-width: 0; flex: 1 1 220px; }
+.viewing { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 14px; border-radius: var(--r);
+  background: var(--accent-soft); border: 1px dashed var(--accent); font-size: 14px; }
+
+/* history axis: one lane per section, runs as a chain of nodes, lanes joined top to bottom */
+.flow { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 16px; display: grid; gap: 8px; }
+.flow-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.flow-h h2 { font-size: 15px; margin: 0; }
+.flow-h .spacer { flex: 1; }
+.lanes { display: grid; gap: 0; }
+.lane { display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr); gap: 10px; align-items: center; padding: 4px 0; }
+.lane + .lane { border-top: 1px dashed var(--line); }
+.sec-btn { font: inherit; font-size: 13px; cursor: pointer; text-align: left; padding: 5px 10px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--sunk); color: var(--fg); display: grid; gap: 0; min-width: 0; transition: background .12s, border-color .12s; }
+.sec-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.sec-btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--accent-fg); }
+.sec-btn .sec-id { font-weight: 700; }
+.sec-btn .sec-sub { font-size: 12px; opacity: .8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chain { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; min-width: 0; }
+.link { width: 14px; height: 2px; background: var(--line); flex: none; }
+.node { font: inherit; cursor: pointer; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  font-size: 14px; line-height: 1; border: 2px solid var(--c); background: var(--c-soft); color: var(--c); transition: transform .08s, opacity .12s; }
+.node:hover { transform: scale(1.15); }
+.node[aria-pressed="true"] { background: var(--c); color: var(--surface); box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--c); }
+.node.dim { opacity: .28; }
+.node.now { border-style: dashed; }
+.node.s-running { font-size: 19px; }
+.flow-cap { font-size: 13px; color: var(--muted); min-height: 1.4em; }
+.older summary { width: fit-content; }
+
+/* the three cards */
+.ppf { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.card3 { background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--k); border-radius: var(--r);
+  padding: 12px 16px 14px; display: grid; gap: 10px; min-width: 0; }
+.k-past { --k: var(--muted); } .k-now { --k: var(--accent); } .k-next { --k: var(--warn); }
+.c3-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.c3-h h2 { font-size: 16px; margin: 0; }
+.c3-h .ico { font-size: 18px; }
+.c3-h .sub { font-size: 13px; color: var(--muted); }
+.lead { font-size: 16px; font-weight: 700; margin: 0; display: flex; gap: 8px; align-items: baseline; }
+.lead .mark { flex: none; }
+.para { margin: 0; font-size: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* folded details: the summary is a bordered button */
+details.fold { border-top: 1px solid var(--line); padding-top: 8px; }
+details.fold > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; width: fit-content; max-width: 100%;
+  font-size: 13.5px; padding: 3px 10px; border: 1px solid var(--accent); border-radius: 6px; color: var(--accent); background: var(--surface); }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: "▸"; font-size: 10px; }
+details.fold[open] > summary::before { content: "▾"; }
+details.fold > summary:hover { background: var(--accent-soft); }
+.fold-body { display: grid; gap: 6px; padding-top: 8px; font-size: 14px; }
+.row { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.row code, code.path { font-family: var(--font-num); font-size: 12.5px; overflow-wrap: anywhere; }
+.row .grow { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.kind { font-size: 11px; padding: 0 6px; border-radius: 3px; background: var(--sunk); color: var(--muted); flex: none; }
+.r-pass { color: var(--ok); } .r-fail { color: var(--bad); } .r-skip { color: var(--muted); }
+.why { color: var(--muted); font-size: 13px; }
+
+/* progress bars */
+.prog { display: grid; gap: 4px; }
+.prog-h { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 13.5px; }
+.prog-h b { min-width: 0; overflow-wrap: anywhere; }
+.segs { display: flex; gap: 3px; height: 10px; }
+.seg { flex: 1; border-radius: 2px; background: var(--sunk); }
+.seg.done { background: var(--ok); }
+.seg.doing { background: repeating-linear-gradient(45deg, var(--run), var(--run) 5px, var(--run-soft) 5px, var(--run-soft) 10px); }
+.seg.blocked { background: var(--bad); }
+.stack { display: flex; height: 10px; border-radius: 3px; overflow: hidden; background: var(--sunk); }
+.stack span { display: block; height: 100%; }
+.c-done { background: var(--ok); } .c-review { background: var(--warn); } .c-doing { background: var(--run); } .c-todo { background: var(--line); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: 0; }
+
+/* kanban inside the present card */
+.kan { display: grid; gap: 8px; }
+.kcol-h { font-size: 12.5px; font-weight: 700; color: var(--muted); display: flex; gap: 6px; }
+.kcard { border: 1px solid var(--line); border-left: 4px solid var(--c, var(--line)); border-radius: 6px; padding: 6px 9px; display: grid; gap: 4px; font-size: 13.5px; }
+.kcard.col-review { --c: var(--warn); } .kcard.col-doing { --c: var(--run); } .kcard.col-done { --c: var(--ok); }
+.kcard.col-done .kt { color: var(--muted); }
+.kcard.hit { outline: 2px solid var(--accent); outline-offset: -1px; }
+.kcard .km { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.kcard details summary { list-style: none; cursor: pointer; width: fit-content; font-size: 12px; padding: 0 8px; border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); }
+.kcard details summary::-webkit-details-marker { display: none; }
+.kcard details summary:hover { background: var(--accent-soft); }
+.kcard details p { margin: 4px 0 0; font-size: 13px; }
+.next-tag { font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 3px; background: var(--accent); color: var(--accent-fg); }
+
+/* future */
+.ask { display: grid; gap: 6px; padding: 8px 10px; border-radius: 6px; background: var(--warn-soft); border: 1px solid var(--warn); }
+.ask.past { background: var(--sunk); border-color: var(--line); }
+.ask-q { font-weight: 700; font-size: 14px; }
+.opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.rec { font-size: 11px; padding: 0 6px; border-radius: 3px; background: var(--sunk); color: var(--muted); }
+.btn[aria-pressed="true"] .rec { background: transparent; color: inherit; opacity: .85; }
+.ask-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hint { font-size: 12.5px; color: var(--muted); }
+#copy-fallback { width: 100%; min-height: 4.5em; font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--fg); padding: 8px; }
+.steps-ol { margin: 0; padding-left: 1.5em; display: grid; gap: 2px; font-size: 14px; }
+.steps-ol li::marker { font-family: var(--font-num); color: var(--muted); }
+
+/* diff */
+.diff-file { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.diff-file > summary { list-style: none; cursor: pointer; display: flex; gap: 8px; align-items: baseline; padding: 4px 8px; background: var(--sunk); font-size: 13px; }
+.diff-file > summary::-webkit-details-marker { display: none; }
+.diff-file > summary::before { content: "▸"; font-size: 10px; color: var(--accent); }
+.diff-file[open] > summary::before { content: "▾"; }
+.diff-file > summary:hover { background: var(--accent-soft); }
+pre.diff { margin: 0; padding: 6px 0; overflow-x: auto; font-family: var(--font-num); font-size: 12px; line-height: 1.5; max-height: 420px; }
+pre.diff span { display: block; padding: 0 10px; white-space: pre; }
+pre.diff .a { background: var(--add-soft); color: var(--add); }
+pre.diff .d { background: var(--del-soft); color: var(--del); }
+pre.diff .hk { color: var(--accent); }
+pre.diff .mt { color: var(--muted); }
+#err { color: var(--bad); font-size: 13px; }
+
+@media (max-width: 980px) { .ppf { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) {
+  .lane { grid-template-columns: minmax(0, 1fr); }
+  .lamp { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <span class="brand">ResponseBoard</span>
+    <span class="proj" id="proj"></span>
+    <span class="tag" id="sample-tag">見本データ</span>
+    <span class="tag live" id="live-tag" hidden>● ライブ</span>
+    <select id="proj-select" class="select" aria-label="プロジェクト" hidden></select>
+    <span class="spacer"></span>
+    <label class="btn" for="file">status.json を開く</label>
+    <input type="file" id="file" accept=".json,application/json">
+  </header>
+  <div id="err" hidden></div>
+  <div id="signal"></div>
+  <div id="viewing"></div>
+  <div id="flow"></div>
+  <div class="ppf">
+    <section class="card3 k-past" id="past" aria-label="過去"></section>
+    <section class="card3 k-now" id="now" aria-label="現在"></section>
+    <section class="card3 k-next" id="next" aria-label="未来"></section>
+  </div>
+</div>
+
+<script type="application/json" id="sample">{
+ "status": {
+  "schema": "responseboard/status@1",
+  "project": {
+   "name": "お天気ウィジェット",
+   "path": "C:/Example/WeatherWidget"
+  },
+  "source": {
+   "tool": "claude-code",
+   "model": "claude-opus-5-5",
+   "written_by": "llm"
+  },
+  "run": {
+   "id": "2026-10-18T16:00",
+   "finished_at": "2026-10-18T16:00:00+09:00",
+   "status": "needs_you",
+   "title": "暗い画面に合わせた",
+   "summary": "OS が暗い設定のときの色を足した。公開先を決めてほしい。",
+   "asks": [
+    {
+     "id": "q1",
+     "question": "どこに公開しますか？",
+     "options": [
+      "GitHub Pages",
+      "Cloudflare Pages",
+      "まだ公開しない"
+     ],
+     "recommended": 0
+    }
+   ],
+   "checks": [
+    {
+     "name": "暗い設定で開く",
+     "result": "pass"
+    },
+    {
+     "name": "明るい設定で開く",
+     "result": "pass"
+    }
+   ],
+   "changes": [
+    {
+     "path": "style.css",
+     "kind": "modified"
+    }
+   ],
+   "not_done": [
+    {
+     "title": "公開",
+     "reason": "公開先が決まっていない"
+    },
+    {
+     "title": "アイコン",
+     "reason": "今回の範囲の外"
+    }
+   ],
+   "next": {
+    "title": "公開する",
+    "task": "t7"
+   }
+  },
+  "section": {
+   "title": "第 3 段: 仕上げ",
+   "steps": [
+    {
+     "title": "暗い画面",
+     "state": "done"
+    },
+    {
+     "title": "公開",
+     "state": "todo"
+    }
+   ]
+  },
+  "tasks": [
+   {
+    "id": "t1",
+    "title": "画面の骨組み",
+    "column": "done",
+    "section": "第 1 段"
+   },
+   {
+    "id": "t2",
+    "title": "今日の天気カード",
+    "column": "done",
+    "section": "第 1 段"
+   },
+   {
+    "id": "t3",
+    "title": "週の予報の列",
+    "column": "done",
+    "section": "第 1 段"
+   },
+   {
+    "id": "t4",
+    "title": "天気 API から取る",
+    "column": "done",
+    "section": "第 2 段",
+    "detail": "Open-Meteo から 7 日分を取る。終わりの条件: 東京の 7 日分が画面に出る。"
+   },
+   {
+    "id": "t5",
+    "title": "取れないときの表示",
+    "column": "done",
+    "section": "第 2 段"
+   },
+   {
+    "id": "t6",
+    "title": "暗い画面に合わせる",
+    "column": "review",
+    "section": "第 3 段"
+   },
+   {
+    "id": "t7",
+    "title": "公開する",
+    "column": "todo",
+    "section": "第 3 段",
+    "detail": "GitHub Pages に置く。終わりの条件: 公開の URL で開ける。"
+   }
+  ],
+  "history": [
+   {
+    "finished_at": "2026-10-18T10:05:00+09:00",
+    "status": "done",
+    "title": "画面の骨組みを作った",
+    "tool": "claude-code"
+   },
+   {
+    "finished_at": "2026-10-18T10:40:00+09:00",
+    "status": "done",
+    "title": "今日の天気カードを足した",
+    "tool": "claude-code"
+   },
+   {
+    "finished_at": "2026-10-18T11:20:00+09:00",
+    "status": "needs_you",
+    "title": "週の予報を横に並べた",
+    "tool": "claude-code"
+   },
+   {
+    "finished_at": "2026-10-18T14:00:00+09:00",
+    "status": "failed",
+    "title": "天気 API をつなぐ途中で止まった",
+    "tool": "claude-code"
+   },
+   {
+    "finished_at": "2026-10-18T14:30:00+09:00",
+    "status": "done",
+    "title": "天気 API から 7 日分を出した",
+    "tool": "claude-code"
+   },
+   {
+    "finished_at": "2026-10-18T15:10:00+09:00",
+    "status": "done",
+    "title": "取れないときの表示を足した",
+    "tool": "claude-code"
+   }
+  ]
+ },
+ "overview": [
+  {
+   "id": 7,
+   "finished_at": "2026-10-18T16:00:00+09:00",
+   "status": "needs_you",
+   "title": "暗い画面に合わせた",
+   "tool": "claude-code",
+   "written_by": "llm",
+   "asks_count": 1,
+   "checks_failed": 0,
+   "section_id": "第 3 段",
+   "section_title": "第 3 段: 仕上げ",
+   "tasks": {
+    "t1": "done",
+    "t2": "done",
+    "t3": "done",
+    "t4": "done",
+    "t5": "done",
+    "t6": "review",
+    "t7": "todo"
+   },
+   "next_task": "t7",
+   "summary": "OS が暗い設定のときの色を足した。公開先を決めてほしい。",
+   "git": {
+    "files": 1,
+    "add": 4,
+    "del": 0
+   }
+  },
+  {
+   "id": 6,
+   "finished_at": "2026-10-18T15:10:00+09:00",
+   "status": "done",
+   "title": "取れないときの表示を足した",
+   "tool": "claude-code",
+   "written_by": "llm",
+   "asks_count": 0,
+   "checks_failed": 0,
+   "section_id": "第 2 段",
+   "section_title": "第 2 段: 天気をつなぐ",
+   "tasks": {
+    "t1": "done",
+    "t2": "done",
+    "t3": "done",
+    "t4": "done",
+    "t5": "done",
+    "t6": "todo",
+    "t7": "todo"
+   },
+   "next_task": "t6",
+   "summary": "通信が切れたら一文を出す。",
+   "git": {
+    "files": 1,
+    "add": 6,
+    "del": 2
+   }
+  },
+  {
+   "id": 5,
+   "finished_at": "2026-10-18T14:30:00+09:00",
+   "status": "done",
+   "title": "天気 API から 7 日分を出した",
+   "tool": "claude-code",
+   "written_by": "llm",
+   "asks_count": 0,
+   "checks_failed": 0,
+   "section_id": "第 2 段",
+   "section_title": "第 2 段: 天気をつなぐ",
+   "tasks": {
+    "t1": "done",
+    "t2": "done",
+    "t3": "done",
+    "t4": "done",
+    "t5": "doing",
+    "t6": "todo",
+    "t7": "todo"
+   },
+   "next_task": "t5",
+   "summary": "手元のサーバで開けば取れた。module に変えた。",
+   "git": {
+    "files": 2,
+    "add": 4,
+    "del": 5
+   }
+  },
+  {
+   "id": 4,
+   "finished_at": "2026-10-18T14:00:00+09:00",
+   "status": "failed",
+   "title": "天気 API をつなぐ途中で止まった",
+   "tool": "claude-code",
+   "written_by": "llm",
+   "asks_count": 0,
+   "checks_failed": 1,
+   "section_id": "第 2 段",
+   "section_title": "第 2 段: 天気をつなぐ",
+   "tasks": {
+    "t1": "done",
+    "t2": "done",
+    "t3": "done",
+    "t4": "doing",
+    "t5": "todo",
+    "t6": "todo",
+    "t7": "todo"
+   },
+   "next_task": "t4",
+   "summary": "fetch が CORS で失敗。file:// で開いていたのが原因らしい。",
+   "git": {
+    "files": 1,
+    "add": 4,
+    "del": 0
+   }
+  },
+  {
+   "id": 3,
+   "finished_at": "2026-10-18T11:20:00+09:00",
+   "status": "needs_you",
+   "title": "週の予報を横に並べた",
+   "tool": "claude-code",
+   "written_by": "llm",
+   "asks_count": 1,
+   "checks_failed": 0,
+   "section_id": "第 1 段",
+   "section_title": "第 1 段: 画面の形",
+   "tasks": {
+    "t1": "done",
+    "t2": "done",
+    "t3": "review",
+    "t4": "todo",
+    "t5": "todo",
+    "t6": "todo",
+    "t7": "todo"
+   },
+   "next_task": "t4",
+   "summary": "7 日分の列を足した。並べ方を選んでほしい。",
+   "git": {
+    "files": 1,
+    "add": 4,
+    "del": 1
+   }
+  },
+  {
+   "id": 2,
+   "finished_at": "2026-10-18T10:40:00+09:00",
+   "status": "done",
+   "title": "今日の天気カードを足した",
+   "tool": "claude-code",
+   "written_by": "llm",
+   "asks_count": 0,
+   "checks_failed": 0,
+   "section_id": "第 1 段",
+   "section_title": "第 1 段: 画面の形",
+   "tasks": {
+    "t1": "done",
+    "t2": "done",
+    "t3": "doing",
+    "t4": "todo",
+    "t5": "todo",
+    "t6": "todo",
+    "t7": "todo"
+   },
+   "next_task": "t3",
+   "summary": "気温を 1 枚のカードで出す。値はまだ仮。",
+   "git": {
+    "files": 2,
+    "add": 5,
+    "del": 1
+   }
+  },
+  {
+   "id": 1,
+   "finished_at": "2026-10-18T10:05:00+09:00",
+   "status": "done",
+   "title": "画面の骨組みを作った",
+   "tool": "claude-code",
+   "written_by": "llm",
+   "asks_count": 0,
+   "checks_failed": 0,
+   "section_id": "第 1 段",
+   "section_title": "第 1 段: 画面の形",
+   "tasks": {
+    "t1": "done",
+    "t2": "todo",
+    "t3": "todo",
+    "t4": "todo",
+    "t5": "todo",
+    "t6": "todo",
+    "t7": "todo"
+   },
+   "next_task": "t2",
+   "summary": "index.html と app.js を置いた。",
+   "git": {
+    "files": 2,
+    "add": 4,
+    "del": 0
+   }
+  }
+ ],
+ "runs": {
+  "7": {
+   "id": 7,
+   "status": {
+    "schema": "responseboard/status@1",
+    "project": {
+     "name": "お天気ウィジェット",
+     "path": "C:/Example/WeatherWidget"
+    },
+    "source": {
+     "tool": "claude-code",
+     "model": "claude-opus-5-5",
+     "written_by": "llm"
+    },
+    "run": {
+     "id": "2026-10-18T16:00",
+     "finished_at": "2026-10-18T16:00:00+09:00",
+     "status": "needs_you",
+     "title": "暗い画面に合わせた",
+     "summary": "OS が暗い設定のときの色を足した。公開先を決めてほしい。",
+     "asks": [
+      {
+       "id": "q1",
+       "question": "どこに公開しますか？",
+       "options": [
+        "GitHub Pages",
+        "Cloudflare Pages",
+        "まだ公開しない"
+       ],
+       "recommended": 0
+      }
+     ],
+     "checks": [
+      {
+       "name": "暗い設定で開く",
+       "result": "pass"
+      },
+      {
+       "name": "明るい設定で開く",
+       "result": "pass"
+      }
+     ],
+     "changes": [
+      {
+       "path": "style.css",
+       "kind": "modified"
+      }
+     ],
+     "not_done": [
+      {
+       "title": "公開",
+       "reason": "公開先が決まっていない"
+      },
+      {
+       "title": "アイコン",
+       "reason": "今回の範囲の外"
+      }
+     ],
+     "next": {
+      "title": "公開する",
+      "task": "t7"
+     }
+    },
+    "section": {
+     "title": "第 3 段: 仕上げ",
+     "steps": [
+      {
+       "title": "暗い画面",
+       "state": "done"
+      },
+      {
+       "title": "公開",
+       "state": "todo"
+      }
+     ]
+    },
+    "tasks": [
+     {
+      "id": "t1",
+      "title": "画面の骨組み",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t2",
+      "title": "今日の天気カード",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t3",
+      "title": "週の予報の列",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t4",
+      "title": "天気 API から取る",
+      "column": "done",
+      "section": "第 2 段",
+      "detail": "Open-Meteo から 7 日分を取る。終わりの条件: 東京の 7 日分が画面に出る。"
+     },
+     {
+      "id": "t5",
+      "title": "取れないときの表示",
+      "column": "done",
+      "section": "第 2 段"
+     },
+     {
+      "id": "t6",
+      "title": "暗い画面に合わせる",
+      "column": "review",
+      "section": "第 3 段"
+     },
+     {
+      "id": "t7",
+      "title": "公開する",
+      "column": "todo",
+      "section": "第 3 段",
+      "detail": "GitHub Pages に置く。終わりの条件: 公開の URL で開ける。"
+     }
+    ]
+   },
+   "git": {
+    "head": "87a0de719499116e257d40c62f3462efb476421f",
+    "branch": "main",
+    "base_kind": "prev",
+    "files": [
+     {
+      "path": "style.css",
+      "add": 4,
+      "del": 0
+     }
+    ],
+    "commits": [],
+    "truncated": false
+   }
+  },
+  "6": {
+   "id": 6,
+   "status": {
+    "schema": "responseboard/status@1",
+    "project": {
+     "name": "お天気ウィジェット",
+     "path": "C:/Example/WeatherWidget"
+    },
+    "source": {
+     "tool": "claude-code",
+     "model": "claude-opus-5-5",
+     "written_by": "llm"
+    },
+    "run": {
+     "id": "2026-10-18T15:10",
+     "finished_at": "2026-10-18T15:10:00+09:00",
+     "status": "done",
+     "title": "取れないときの表示を足した",
+     "summary": "通信が切れたら一文を出す。",
+     "asks": [],
+     "checks": [
+      {
+       "name": "通信を切って開く",
+       "result": "pass"
+      }
+     ],
+     "changes": [
+      {
+       "path": "app.js",
+       "kind": "modified"
+      }
+     ],
+     "not_done": [],
+     "next": {
+      "title": "暗い画面に合わせる",
+      "task": "t6"
+     }
+    },
+    "section": {
+     "title": "第 2 段: 天気をつなぐ",
+     "steps": [
+      {
+       "title": "API",
+       "state": "done"
+      },
+      {
+       "title": "失敗の表示",
+       "state": "done"
+      }
+     ]
+    },
+    "tasks": [
+     {
+      "id": "t1",
+      "title": "画面の骨組み",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t2",
+      "title": "今日の天気カード",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t3",
+      "title": "週の予報の列",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t4",
+      "title": "天気 API から取る",
+      "column": "done",
+      "section": "第 2 段",
+      "detail": "Open-Meteo から 7 日分を取る。終わりの条件: 東京の 7 日分が画面に出る。"
+     },
+     {
+      "id": "t5",
+      "title": "取れないときの表示",
+      "column": "done",
+      "section": "第 2 段"
+     },
+     {
+      "id": "t6",
+      "title": "暗い画面に合わせる",
+      "column": "todo",
+      "section": "第 3 段"
+     },
+     {
+      "id": "t7",
+      "title": "公開する",
+      "column": "todo",
+      "section": "第 3 段",
+      "detail": "GitHub Pages に置く。終わりの条件: 公開の URL で開ける。"
+     }
+    ]
+   },
+   "git": {
+    "head": "87a0de719499116e257d40c62f3462efb476421f",
+    "branch": "main",
+    "base_kind": "prev",
+    "files": [
+     {
+      "path": "app.js",
+      "add": 6,
+      "del": 2
+     }
+    ],
+    "commits": [
+     {
+      "hash": "87a0de7",
+      "subject": "API をつないだ"
+     }
+    ],
+    "truncated": false
+   }
+  },
+  "5": {
+   "id": 5,
+   "status": {
+    "schema": "responseboard/status@1",
+    "project": {
+     "name": "お天気ウィジェット",
+     "path": "C:/Example/WeatherWidget"
+    },
+    "source": {
+     "tool": "claude-code",
+     "model": "claude-opus-5-5",
+     "written_by": "llm"
+    },
+    "run": {
+     "id": "2026-10-18T14:30",
+     "finished_at": "2026-10-18T14:30:00+09:00",
+     "status": "done",
+     "title": "天気 API から 7 日分を出した",
+     "summary": "手元のサーバで開けば取れた。module に変えた。",
+     "asks": [],
+     "checks": [
+      {
+       "name": "東京の 7 日分",
+       "result": "pass"
+      }
+     ],
+     "changes": [
+      {
+       "path": "app.js",
+       "kind": "modified"
+      },
+      {
+       "path": "index.html",
+       "kind": "modified"
+      }
+     ],
+     "not_done": [
+      {
+       "title": "取れないときの表示",
+       "reason": "次の実行で"
+      }
+     ],
+     "next": {
+      "title": "取れないときの表示",
+      "task": "t5"
+     }
+    },
+    "section": {
+     "title": "第 2 段: 天気をつなぐ",
+     "steps": [
+      {
+       "title": "API",
+       "state": "done"
+      },
+      {
+       "title": "失敗の表示",
+       "state": "todo"
+      }
+     ]
+    },
+    "tasks": [
+     {
+      "id": "t1",
+      "title": "画面の骨組み",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t2",
+      "title": "今日の天気カード",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t3",
+      "title": "週の予報の列",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t4",
+      "title": "天気 API から取る",
+      "column": "done",
+      "section": "第 2 段",
+      "detail": "Open-Meteo から 7 日分を取る。終わりの条件: 東京の 7 日分が画面に出る。"
+     },
+     {
+      "id": "t5",
+      "title": "取れないときの表示",
+      "column": "doing",
+      "section": "第 2 段"
+     },
+     {
+      "id": "t6",
+      "title": "暗い画面に合わせる",
+      "column": "todo",
+      "section": "第 3 段"
+     },
+     {
+      "id": "t7",
+      "title": "公開する",
+      "column": "todo",
+      "section": "第 3 段",
+      "detail": "GitHub Pages に置く。終わりの条件: 公開の URL で開ける。"
+     }
+    ]
+   },
+   "git": {
+    "head": "0bb4f6ff9fabedc508bf57c0bb11ed1bbc4236e4",
+    "branch": "main",
+    "base_kind": "prev",
+    "files": [
+     {
+      "path": "app.js",
+      "add": 3,
+      "del": 4
+     },
+     {
+      "path": "index.html",
+      "add": 1,
+      "del": 1
+     }
+    ],
+    "commits": [],
+    "truncated": false
+   }
+  },
+  "4": {
+   "id": 4,
+   "status": {
+    "schema": "responseboard/status@1",
+    "project": {
+     "name": "お天気ウィジェット",
+     "path": "C:/Example/WeatherWidget"
+    },
+    "source": {
+     "tool": "claude-code",
+     "model": "claude-opus-5-5",
+     "written_by": "llm"
+    },
+    "run": {
+     "id": "2026-10-18T14:00",
+     "finished_at": "2026-10-18T14:00:00+09:00",
+     "status": "failed",
+     "title": "天気 API をつなぐ途中で止まった",
+     "summary": "fetch が CORS で失敗。file:// で開いていたのが原因らしい。",
+     "asks": [],
+     "checks": [
+      {
+       "name": "東京の 7 日分",
+       "result": "fail",
+       "detail": "CORS エラー"
+      }
+     ],
+     "changes": [
+      {
+       "path": "api.js",
+       "kind": "added"
+      }
+     ],
+     "not_done": [
+      {
+       "title": "画面への反映",
+       "reason": "取れていないため"
+      }
+     ],
+     "next": {
+      "title": "手元のサーバで開き直す",
+      "task": "t4"
+     }
+    },
+    "section": {
+     "title": "第 2 段: 天気をつなぐ",
+     "steps": [
+      {
+       "title": "API",
+       "state": "doing"
+      },
+      {
+       "title": "失敗の表示",
+       "state": "todo"
+      }
+     ]
+    },
+    "tasks": [
+     {
+      "id": "t1",
+      "title": "画面の骨組み",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t2",
+      "title": "今日の天気カード",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t3",
+      "title": "週の予報の列",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t4",
+      "title": "天気 API から取る",
+      "column": "doing",
+      "section": "第 2 段",
+      "detail": "Open-Meteo から 7 日分を取る。終わりの条件: 東京の 7 日分が画面に出る。"
+     },
+     {
+      "id": "t5",
+      "title": "取れないときの表示",
+      "column": "todo",
+      "section": "第 2 段"
+     },
+     {
+      "id": "t6",
+      "title": "暗い画面に合わせる",
+      "column": "todo",
+      "section": "第 3 段"
+     },
+     {
+      "id": "t7",
+      "title": "公開する",
+      "column": "todo",
+      "section": "第 3 段",
+      "detail": "GitHub Pages に置く。終わりの条件: 公開の URL で開ける。"
+     }
+    ]
+   },
+   "git": {
+    "head": "0bb4f6ff9fabedc508bf57c0bb11ed1bbc4236e4",
+    "branch": "main",
+    "base_kind": "prev",
+    "files": [
+     {
+      "path": "api.js",
+      "add": 4,
+      "del": 0
+     }
+    ],
+    "commits": [],
+    "truncated": false
+   }
+  },
+  "3": {
+   "id": 3,
+   "status": {
+    "schema": "responseboard/status@1",
+    "project": {
+     "name": "お天気ウィジェット",
+     "path": "C:/Example/WeatherWidget"
+    },
+    "source": {
+     "tool": "claude-code",
+     "model": "claude-opus-5-5",
+     "written_by": "llm"
+    },
+    "run": {
+     "id": "2026-10-18T11:20",
+     "finished_at": "2026-10-18T11:20:00+09:00",
+     "status": "needs_you",
+     "title": "週の予報を横に並べた",
+     "summary": "7 日分の列を足した。並べ方を選んでほしい。",
+     "asks": [
+      {
+       "id": "q1",
+       "question": "週の予報は横に流す？縦に積む？",
+       "options": [
+        "横に流す",
+        "縦に積む"
+       ],
+       "recommended": 0
+      }
+     ],
+     "checks": [
+      {
+       "name": "列が出る",
+       "result": "pass"
+      },
+      {
+       "name": "狭い画面",
+       "result": "skip",
+       "detail": "まだ見ていない"
+      }
+     ],
+     "changes": [
+      {
+       "path": "app.js",
+       "kind": "modified"
+      }
+     ],
+     "not_done": [],
+     "next": {
+      "title": "天気 API から取る",
+      "task": "t4"
+     }
+    },
+    "section": {
+     "title": "第 1 段: 画面の形",
+     "steps": [
+      {
+       "title": "骨組み",
+       "state": "done"
+      },
+      {
+       "title": "今日",
+       "state": "done"
+      },
+      {
+       "title": "週",
+       "state": "done"
+      }
+     ]
+    },
+    "tasks": [
+     {
+      "id": "t1",
+      "title": "画面の骨組み",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t2",
+      "title": "今日の天気カード",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t3",
+      "title": "週の予報の列",
+      "column": "review",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t4",
+      "title": "天気 API から取る",
+      "column": "todo",
+      "section": "第 2 段",
+      "detail": "Open-Meteo から 7 日分を取る。終わりの条件: 東京の 7 日分が画面に出る。"
+     },
+     {
+      "id": "t5",
+      "title": "取れないときの表示",
+      "column": "todo",
+      "section": "第 2 段"
+     },
+     {
+      "id": "t6",
+      "title": "暗い画面に合わせる",
+      "column": "todo",
+      "section": "第 3 段"
+     },
+     {
+      "id": "t7",
+      "title": "公開する",
+      "column": "todo",
+      "section": "第 3 段",
+      "detail": "GitHub Pages に置く。終わりの条件: 公開の URL で開ける。"
+     }
+    ]
+   },
+   "git": {
+    "head": "0bb4f6ff9fabedc508bf57c0bb11ed1bbc4236e4",
+    "branch": "main",
+    "base_kind": "prev",
+    "files": [
+     {
+      "path": "app.js",
+      "add": 4,
+      "del": 1
+     }
+    ],
+    "commits": [
+     {
+      "hash": "0bb4f6f",
+      "subject": "今日のカード"
+     }
+    ],
+    "truncated": false
+   }
+  },
+  "2": {
+   "id": 2,
+   "status": {
+    "schema": "responseboard/status@1",
+    "project": {
+     "name": "お天気ウィジェット",
+     "path": "C:/Example/WeatherWidget"
+    },
+    "source": {
+     "tool": "claude-code",
+     "model": "claude-opus-5-5",
+     "written_by": "llm"
+    },
+    "run": {
+     "id": "2026-10-18T10:40",
+     "finished_at": "2026-10-18T10:40:00+09:00",
+     "status": "done",
+     "title": "今日の天気カードを足した",
+     "summary": "気温を 1 枚のカードで出す。値はまだ仮。",
+     "asks": [],
+     "checks": [
+      {
+       "name": "カードが出る",
+       "result": "pass"
+      }
+     ],
+     "changes": [
+      {
+       "path": "app.js",
+       "kind": "modified"
+      },
+      {
+       "path": "style.css",
+       "kind": "added"
+      }
+     ],
+     "not_done": [
+      {
+       "title": "本物の天気",
+       "reason": "第 2 段でつなぐ"
+      }
+     ],
+     "next": {
+      "title": "週の予報の列",
+      "task": "t3"
+     }
+    },
+    "section": {
+     "title": "第 1 段: 画面の形",
+     "steps": [
+      {
+       "title": "骨組み",
+       "state": "done"
+      },
+      {
+       "title": "今日",
+       "state": "done"
+      },
+      {
+       "title": "週",
+       "state": "todo"
+      }
+     ]
+    },
+    "tasks": [
+     {
+      "id": "t1",
+      "title": "画面の骨組み",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t2",
+      "title": "今日の天気カード",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t3",
+      "title": "週の予報の列",
+      "column": "doing",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t4",
+      "title": "天気 API から取る",
+      "column": "todo",
+      "section": "第 2 段",
+      "detail": "Open-Meteo から 7 日分を取る。終わりの条件: 東京の 7 日分が画面に出る。"
+     },
+     {
+      "id": "t5",
+      "title": "取れないときの表示",
+      "column": "todo",
+      "section": "第 2 段"
+     },
+     {
+      "id": "t6",
+      "title": "暗い画面に合わせる",
+      "column": "todo",
+      "section": "第 3 段"
+     },
+     {
+      "id": "t7",
+      "title": "公開する",
+      "column": "todo",
+      "section": "第 3 段",
+      "detail": "GitHub Pages に置く。終わりの条件: 公開の URL で開ける。"
+     }
+    ]
+   },
+   "git": {
+    "head": "8fa50e0ba9667dbd3b65a4c55990d96f3d958f9e",
+    "branch": "main",
+    "base_kind": "prev",
+    "files": [
+     {
+      "path": "app.js",
+      "add": 4,
+      "del": 1
+     },
+     {
+      "path": "style.css",
+      "add": 1,
+      "del": 0
+     }
+    ],
+    "commits": [],
+    "truncated": false
+   }
+  },
+  "1": {
+   "id": 1,
+   "status": {
+    "schema": "responseboard/status@1",
+    "project": {
+     "name": "お天気ウィジェット",
+     "path": "C:/Example/WeatherWidget"
+    },
+    "source": {
+     "tool": "claude-code",
+     "model": "claude-opus-5-5",
+     "written_by": "llm"
+    },
+    "run": {
+     "id": "2026-10-18T10:05",
+     "finished_at": "2026-10-18T10:05:00+09:00",
+     "status": "done",
+     "title": "画面の骨組みを作った",
+     "summary": "index.html と app.js を置いた。",
+     "asks": [],
+     "checks": [
+      {
+       "name": "ブラウザで開く",
+       "result": "pass"
+      }
+     ],
+     "changes": [
+      {
+       "path": "index.html",
+       "kind": "added"
+      },
+      {
+       "path": "app.js",
+       "kind": "added"
+      }
+     ],
+     "not_done": [
+      {
+       "title": "見た目の調整",
+       "reason": "形が決まってから"
+      }
+     ],
+     "next": {
+      "title": "今日の天気カード",
+      "task": "t2"
+     }
+    },
+    "section": {
+     "title": "第 1 段: 画面の形",
+     "steps": [
+      {
+       "title": "骨組み",
+       "state": "done"
+      },
+      {
+       "title": "今日",
+       "state": "todo"
+      },
+      {
+       "title": "週",
+       "state": "todo"
+      }
+     ]
+    },
+    "tasks": [
+     {
+      "id": "t1",
+      "title": "画面の骨組み",
+      "column": "done",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t2",
+      "title": "今日の天気カード",
+      "column": "todo",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t3",
+      "title": "週の予報の列",
+      "column": "todo",
+      "section": "第 1 段"
+     },
+     {
+      "id": "t4",
+      "title": "天気 API から取る",
+      "column": "todo",
+      "section": "第 2 段",
+      "detail": "Open-Meteo から 7 日分を取る。終わりの条件: 東京の 7 日分が画面に出る。"
+     },
+     {
+      "id": "t5",
+      "title": "取れないときの表示",
+      "column": "todo",
+      "section": "第 2 段"
+     },
+     {
+      "id": "t6",
+      "title": "暗い画面に合わせる",
+      "column": "todo",
+      "section": "第 3 段"
+     },
+     {
+      "id": "t7",
+      "title": "公開する",
+      "column": "todo",
+      "section": "第 3 段",
+      "detail": "GitHub Pages に置く。終わりの条件: 公開の URL で開ける。"
+     }
+    ]
+   },
+   "git": {
+    "head": "8fa50e0ba9667dbd3b65a4c55990d96f3d958f9e",
+    "branch": "main",
+    "base_kind": "head",
+    "files": [
+     {
+      "path": "app.js",
+      "add": 2,
+      "del": 0
+     },
+     {
+      "path": "index.html",
+      "add": 2,
+      "del": 0
+     }
+    ],
+    "commits": [],
+    "truncated": false
+   }
+  }
+ },
+ "patches": {
+  "7": "diff --git a/style.css b/style.css\nindex 75a3622..97e2849 100644\n--- a/style.css\n+++ b/style.css\n@@ -1 +1,5 @@\n .card { border: 1px solid #ccc; padding: 8px; }\n+@media (prefers-color-scheme: dark) {\n+  body { background: #111; color: #eee; }\n+  .card { border-color: #444; }\n+}\n",
+  "6": "diff --git a/app.js b/app.js\nindex d0dc02a..00d4c3c 100644\n--- a/app.js\n+++ b/app.js\n@@ -3,5 +3,9 @@ const app = document.getElementById('app');\n function today(t) {\n   return `<div class=card>${t.temp}°<\/div>`;\n }\n-const d = await forecast(35.68, 139.69);\n-app.innerHTML = d.daily.temperature_2m_max.map(temp => today({ temp })).join('');\n+try {\n+  const d = await forecast(35.68, 139.69);\n+  app.innerHTML = d.daily.temperature_2m_max.map(temp => today({ temp })).join('');\n+} catch {\n+  app.textContent = '天気を取れませんでした';\n+}\n",
+  "5": "diff --git a/app.js b/app.js\nindex a0afd17..d0dc02a 100644\n--- a/app.js\n+++ b/app.js\n@@ -1,8 +1,7 @@\n+import { forecast } from './api.js';\n const app = document.getElementById('app');\n function today(t) {\n   return `<div class=card>${t.temp}°<\/div>`;\n }\n-function week(days) {\n-  return days.map(today).join('');\n-}\n-app.innerHTML = today({ temp: 21 }) + week([{ temp: 19 }, { temp: 23 }]);\n+const d = await forecast(35.68, 139.69);\n+app.innerHTML = d.daily.temperature_2m_max.map(temp => today({ temp })).join('');\ndiff --git a/index.html b/index.html\nindex 6339036..adcaea5 100644\n--- a/index.html\n+++ b/index.html\n@@ -1,2 +1,2 @@\n <main id=app><\/main>\n-<script src=app.js><\/script>\n+<script type=module src=app.js><\/script>\n",
+  "4": "diff --git a/api.js b/api.js\nnew file mode 100644\nindex 0000000..45f0c6f\n--- /dev/null\n+++ b/api.js\n@@ -0,0 +1,4 @@\n+export async function forecast(lat, lon) {\n+  const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max`;\n+  return (await fetch(u)).json();\n+}\n",
+  "3": "diff --git a/app.js b/app.js\nindex 55d4a63..a0afd17 100644\n--- a/app.js\n+++ b/app.js\n@@ -2,4 +2,7 @@ const app = document.getElementById('app');\n function today(t) {\n   return `<div class=card>${t.temp}°<\/div>`;\n }\n-app.innerHTML = today({ temp: 21 });\n+function week(days) {\n+  return days.map(today).join('');\n+}\n+app.innerHTML = today({ temp: 21 }) + week([{ temp: 19 }, { temp: 23 }]);\n",
+  "2": "diff --git a/app.js b/app.js\nindex 85026a8..55d4a63 100644\n--- a/app.js\n+++ b/app.js\n@@ -1,2 +1,5 @@\n const app = document.getElementById('app');\n-app.textContent = '天気';\n+function today(t) {\n+  return `<div class=card>${t.temp}°<\/div>`;\n+}\n+app.innerHTML = today({ temp: 21 });\ndiff --git a/style.css b/style.css\nnew file mode 100644\nindex 0000000..75a3622\n--- /dev/null\n+++ b/style.css\n@@ -0,0 +1 @@\n+.card { border: 1px solid #ccc; padding: 8px; }\n",
+  "1": "diff --git a/app.js b/app.js\nnew file mode 100644\nindex 0000000..85026a8\n--- /dev/null\n+++ b/app.js\n@@ -0,0 +1,2 @@\n+const app = document.getElementById('app');\n+app.textContent = '天気';\ndiff --git a/index.html b/index.html\nnew file mode 100644\nindex 0000000..6339036\n--- /dev/null\n+++ b/index.html\n@@ -0,0 +1,2 @@\n+<main id=app><\/main>\n+<script src=app.js><\/script>\n"
+ }
+}</script>
+<script>
+// Icons: one icon = one idea, always next to a word. Status shapes differ, so they read without color.
+const STATUS = {
+  done:      { mark: "●", label: "完了" },
+  needs_you: { mark: "▲", label: "あなたの番" },
+  failed:    { mark: "✕", label: "失敗" },
+  running:   { mark: "◐", label: "実行中" },
+};
+const ICON = { past: "🕘", now: "📍", next: "🧭", did: "✅", notDone: "⊘", diff: "±", note: "📝", moved: "⇄", ask: "▲", flow: "🗂" };
+const STEP = { done: "●", doing: "◐", todo: "○", blocked: "✕" };
+const COLS = [["doing", "作業中"], ["review", "確認待ち"], ["todo", "未着手"], ["done", "完了"]];
+const COLNAME = Object.fromEntries(COLS);
+const KIND = { added: "追加", modified: "変更", deleted: "削除" };
+const RESULT = { pass: "✔ 通過", fail: "✕ 失敗", skip: "− 未実施" };
+const WRITER = { llm: "LLM が記入", hook: "フックが記入", extractor: "最終応答から抜き出し", manual: "手で記入（rb コマンド）" };
+const LANES_SHOWN = 4;
+
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+  }
+  // Element.append() stringifies arrays, so flatten first.
+  for (const k of kids.flat(Infinity)) if (k != null && k !== false) e.append(k.nodeType ? k : String(k));
+  return e;
+}
+// replaceChildren() has the same trap as append(): arrays become "[object ...]" and false becomes "false".
+const put = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter(k => k != null && k !== false && k !== ""));
+const fmt = s => { const d = new Date(s); return isNaN(d) ? (s || "") : `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+const ago = s => { const m = Math.round((Date.now() - new Date(s)) / 60000); if (isNaN(m)) return ""; if (m < 1) return "たった今"; if (m < 60) return `${m}分前`; if (m < 1440) return `${Math.round(m/60)}時間前`; return `${Math.round(m/1440)}日前`; };
+const local = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+const secId = s => s ? (s.id || String(s.title || "").replace("：", ":").split(":")[0].trim() || null) : null;
+const secRest = t => { const s = String(t || "").replace("：", ":"); return s.includes(":") ? s.split(":").slice(1).join(":").trim() : ""; };
+const mk = st => h("span", { class: `mark s-${st}`, "aria-hidden": "true" }, STATUS[st]?.mark || "?");
+
+// ---- state ----
+const answers = {};
+const openKeys = new Set();         // which folded parts are open, kept across redraws
+let src = null;                     // where the data comes from: { status(), overview(), run(id), patch(id) }
+let latest = null;                  // newest status.json
+let runs = [];                      // history, oldest first, each with .moved (task ids whose column changed)
+let sel = null;                     // chosen run id, or null for the newest
+let snap = null;                    // { id, status, git } for the chosen point
+let fSection = null, fTask = null;  // cross filters
+let liveInfo = null;
+
+// ---- data sources ----
+function bundleSource(b) {
+  return {
+    status: async () => b.status,
+    overview: async () => b.overview || [],
+    run: async id => b.runs?.[id] || null,
+    patch: async id => b.patches?.[id] ?? null,
+  };
+}
+async function api(u, text) { const r = await fetch(u, { cache: "no-store" }); if (!r.ok) throw new Error(`${u}: ${r.status}`); return text ? r.text() : r.json(); }
+const qp = path => `path=${encodeURIComponent(path)}`;
+function liveSource(path) {
+  return {
+    status: () => api(`api/status?${qp(path)}`),
+    overview: () => api(`api/overview?${qp(path)}`),
+    run: id => api(`api/run?${qp(path)}&id=${id}`).catch(() => null),
+    patch: id => api(`api/diff?${qp(path)}&id=${id}`, true).catch(() => null),
+  };
+}
+
+// ---- derived ----
+function prepRuns(ov) {
+  const list = [...ov].reverse();
+  let prev = null;   // the first run has nothing to compare with, so nothing "moved" in it
+  for (const r of list) {
+    const t = r.tasks || {};
+    r.moved = prev ? Object.keys(t).filter(id => prev[id] !== t[id]).map(id => ({ id, from: prev[id] || null, to: t[id] })) : [];
+    prev = t;
+  }
+  return list;
+}
+// The newest status.json is the same run as the newest history row when title and time match.
+function latestId() {
+  const last = runs[runs.length - 1];
+  return last && latest && last.finished_at === latest.run.finished_at && last.title === latest.run.title ? last.id : "now";
+}
+function nodes() {
+  const list = runs.map(r => ({ ...r }));
+  if (latest && latestId() === "now") {
+    const s = latest.section;
+    list.push({ id: "now", status: latest.run.status, title: latest.run.title, finished_at: latest.run.finished_at,
+      section_id: secId(s), section_title: s?.title, tasks: Object.fromEntries((latest.tasks || []).map(t => [t.id, t.column])),
+      next_task: latest.run.next?.task, moved: [] });
+  }
+  return list;
+}
+function matches(n) {
+  if (fSection && n.section_id !== fSection) return false;
+  if (fTask && !(n.moved || []).some(m => m.id === fTask) && n.next_task !== fTask) return false;
+  return true;
+}
+const chosenId = () => sel ?? latestId();
+
+// ---- top: the newest run ----
+function renderSignal() {
+  const run = latest.run, st = STATUS[run.status] || STATUS.done;
+  put(document.getElementById("signal"), h("section", { class: `signal s-${run.status}`, "aria-label": "最新の実行" },
+    h("div", { class: "lamp", "aria-hidden": "true" }, st.mark),
+    h("span", { class: "sig-label" }, `${st.mark} ${st.label}`, (run.asks || []).length ? ` ・ 質問 ${run.asks.length} 件` : ""),
+    h("p", { class: "sig-title" }, run.title),
+    h("span", { class: "muted num", style: "font-size:13px" }, `${latest.source?.tool || ""} ・ ${ago(run.finished_at)}`)));
+  const v = document.getElementById("viewing");
+  if (sel != null && sel !== latestId()) {
+    const n = nodes().find(x => String(x.id) === String(sel));
+    put(v, h("div", { class: "viewing", role: "status" },
+      h("span", null, `${ICON.past} `, h("b", { class: "num" }, fmt(n?.finished_at)), " の時点を見ています"),
+      h("button", { class: "btn small primary", type: "button", onclick: () => choose(null) }, "最新に戻る ⏭")));
+  } else put(v);
+}
+
+// ---- history axis: sections as lanes, runs as nodes ----
+function renderFlow() {
+  const el = document.getElementById("flow");
+  const all = nodes();
+  if (all.length < 2 && !runs.length) { put(el); return; }
+  const lanes = [];
+  for (const n of all) {
+    const last = lanes[lanes.length - 1];
+    if (last && last.id === n.section_id) last.items.push(n);
+    else lanes.push({ id: n.section_id, title: n.section_title, items: [n] });
+  }
+  const cur = String(chosenId());
+  const hits = all.filter(matches);
+  const order = all.filter(matches).map(n => String(n.id));
+  const at = order.indexOf(cur);
+  const step = d => { const list = order.length ? order : all.map(n => String(n.id)); const i = list.indexOf(cur);
+    const j = i < 0 ? (d < 0 ? list.length - 1 : 0) : i + d; if (j >= 0 && j < list.length) choose(list[j]); };
+  const lane = l => h("div", { class: "lane" },
+    h("button", { class: "sec-btn", type: "button", "aria-pressed": fSection != null && fSection === l.id ? "true" : "false",
+      title: "このセクションで絞り込む", onclick: () => { fSection = fSection === l.id ? null : l.id; render(); } },
+      h("span", { class: "sec-id" }, l.id || "（セクションなし）", " ", h("span", { class: "num", style: "font-weight:400;opacity:.75" }, `${l.items.length}件`)),
+      secRest(l.title) && h("span", { class: "sec-sub" }, secRest(l.title))),
+    h("div", { class: "chain" }, l.items.map((n, i) => [
+      i > 0 && h("span", { class: "link", "aria-hidden": "true" }),
+      h("button", { class: `node s-${n.status}${matches(n) ? "" : " dim"}${n.id === "now" ? " now" : ""}`, type: "button",
+        "aria-pressed": String(n.id) === cur ? "true" : "false", "data-id": String(n.id),
+        title: `${fmt(n.finished_at)} ${STATUS[n.status]?.label || ""}: ${n.title}`,
+        "aria-label": `${fmt(n.finished_at)} ${STATUS[n.status]?.label || ""} ${n.title}`,
+        onclick: () => choose(n.id === latestId() ? null : n.id),
+        onmouseenter: () => cap(n), onfocus: () => cap(n), onmouseleave: () => cap(null) }, STATUS[n.status]?.mark || "?")])));
+  const capEl = h("div", { class: "flow-cap", "aria-live": "polite" });
+  const cap = n => { const c = n || all.find(x => String(x.id) === cur); put(capEl, c ? h("span", null, mk(c.status), " ", h("span", { class: "num" }, fmt(c.finished_at)), " ", c.title) : ""); };
+  const older = lanes.slice(0, Math.max(0, lanes.length - LANES_SHOWN)), recent = lanes.slice(-LANES_SHOWN);
+  const filt = [];
+  if (fSection != null) filt.push(h("button", { class: "btn small", type: "button", "aria-pressed": "true", onclick: () => { fSection = null; render(); } }, `セクション: ${fSection} ✕`));
+  if (fTask) { const t = (snap?.status.tasks || latest.tasks || []).find(x => x.id === fTask);
+    filt.push(h("button", { class: "btn small", type: "button", "aria-pressed": "true", onclick: () => { fTask = null; render(); } }, `タスク: ${t ? t.title : fTask} ✕`)); }
+  put(el, h("section", { class: "flow", "aria-label": "履歴" },
+    h("div", { class: "flow-h" },
+      h("h2", null, `${ICON.flow} 履歴`), h("span", { class: "hint" }, "セクションごとの流れ。丸を押すとその時点を見る"),
+      h("span", { class: "spacer" }), ...filt,
+      (fSection != null || fTask) && h("span", { class: "tag" }, "当てはまる ", h("b", { class: "num" }, hits.length), " 件"),
+      h("button", { class: "btn small", type: "button", onclick: () => step(-1), disabled: (order.length ? at === 0 : cur === String(all[0]?.id)) || null }, "◀ 前"),
+      h("button", { class: "btn small", type: "button", onclick: () => step(1), disabled: (order.length ? at === order.length - 1 : cur === String(all[all.length - 1]?.id)) || null }, "次 ▶")),
+    older.length > 0 && fold("older", `前のセクション ${older.length} 個`, h("div", { class: "lanes" }, older.map(lane)), "older"),
+    h("div", { class: "lanes" }, recent.map(lane)),
+    capEl));
+  cap(null);
+}
+
+// a folded part whose open state survives redraws
+function fold(key, label, body, cls) {
+  const d = h("details", { class: `fold ${cls || ""}`, "data-key": key }, h("summary", null, label), h("div", { class: "fold-body" }, body));
+  if (openKeys.has(key)) d.open = true;
+  d.addEventListener("toggle", () => { d.open ? openKeys.add(key) : openKeys.delete(key); if (d.open) d.dispatchEvent(new Event("opened")); });
+  return d;
+}
+
+// ---- past: what the chosen run did and did not do ----
+function renderPast() {
+  const s = snap.status, run = s.run, git = snap.git;
+  const checks = run.checks || [], changes = run.changes || [], notDone = run.not_done || [];
+  const skipped = checks.filter(c => c.result === "skip");
+  const n = nodes().find(x => String(x.id) === String(snap.id));
+  const moved = n?.moved || [];
+  const gitBy = Object.fromEntries((git?.files || []).map(f => [f.path, f]));
+  const gAdd = (git?.files || []).reduce((a, f) => a + (f.add || 0), 0), gDel = (git?.files || []).reduce((a, f) => a + (f.del || 0), 0);
+  const did = [
+    changes.length > 0 && h("div", null, h("div", { class: "hint" }, `変えたファイル（${changes.length}）`),
+      changes.map(c => { const g = Object.entries(gitBy).find(([p]) => p === c.path || p.endsWith("/" + c.path))?.[1];
+        return h("div", { class: "row" }, h("span", { class: "kind" }, KIND[c.kind] || c.kind), h("code", { class: "grow" }, c.path),
+          g && h("span", { class: "num", style: "font-size:12px" }, h("span", { class: "plus" }, `+${g.add ?? "?"}`), " ", h("span", { class: "minus" }, `−${g.del ?? "?"}`))); })),
+    checks.length > 0 && h("div", null, h("div", { class: "hint" }, "確かめたこと"),
+      checks.map(c => h("div", { class: "row" }, h("span", { class: `r-${c.result}`, style: "flex:none" }, RESULT[c.result]), h("span", { class: "grow" }, c.name, c.detail ? `（${c.detail}）` : "")))),
+    moved.length > 0 && h("div", null, h("div", { class: "hint" }, `${ICON.moved} 動いたタスク`),
+      moved.map(m => { const t = (s.tasks || []).find(x => x.id === m.id);
+        return h("div", { class: "row" }, h("span", { class: "grow" }, t?.title || m.id), h("span", { class: "tag" }, `${m.from ? COLNAME[m.from] : "新規"} → ${COLNAME[m.to] || m.to}`)); })),
+  ].filter(Boolean);
+  const nd = [...notDone.map(x => h("div", { class: "row" }, h("span", { style: "flex:none" }, ICON.notDone), h("span", { class: "grow" }, x.title, x.reason && h("span", { class: "why" }, ` — ${x.reason}`)))),
+              ...skipped.map(c => h("div", { class: "row" }, h("span", { class: "r-skip", style: "flex:none" }, "−"), h("span", { class: "grow" }, `確認しなかった: ${c.name}`, c.detail && h("span", { class: "why" }, ` — ${c.detail}`))))];
+  const passed = checks.filter(c => c.result === "pass").length;
+  const el = document.getElementById("past");
+  put(el, 
+    h("div", { class: "c3-h" }, h("span", { class: "ico", "aria-hidden": "true" }, ICON.past), h("h2", null, "過去"), h("span", { class: "sub" }, "したこと・しなかったこと")),
+    h("p", { class: "lead" }, mk(run.status), h("span", null, run.title)),
+    h("div", { class: "chips" },
+      h("span", { class: `tag s-${run.status}` }, h("span", { class: "mark" }, STATUS[run.status]?.mark), " ", STATUS[run.status]?.label),
+      h("span", { class: "tag num" }, fmt(run.finished_at)),
+      checks.length > 0 && h("span", { class: "tag" }, "確認 ", h("b", { class: "num" }, `${passed}/${checks.length}`)),
+      git && h("span", { class: "tag num" }, `${git.files.length} ファイル `, h("span", { class: "plus" }, `+${gAdd}`), " ", h("span", { class: "minus" }, `−${gDel}`)),
+      nd.length > 0 && h("span", { class: "tag" }, `${ICON.notDone} しなかった `, h("b", { class: "num" }, nd.length))),
+    run.summary && h("p", { class: "para" }, run.summary),
+    did.length > 0 && fold("did", `${ICON.did} したこと`, did),
+    nd.length > 0 && fold("notdone", `${ICON.notDone} しなかったこと（${nd.length}）`, nd),
+    git && diffFold(git),
+    (run.notes || s.source?.written_by) && fold("notes", `${ICON.note} 説明`, [run.notes && h("p", { class: "para", style: "white-space:pre-wrap" }, run.notes),
+      s.source?.written_by && h("div", { class: "hint" }, `この結果は ${WRITER[s.source.written_by] || s.source.written_by}（${s.source.tool || "?"}${s.source.model ? " · " + s.source.model : ""}）`)]));
+}
+
+function diffFold(git) {
+  const id = snap.id;
+  const base = { prev: "前の実行から", head: "最後のコミットから", empty: "最初から" }[git.base_kind] || "";
+  const body = h("div", { class: "fold-body" });
+  const d = fold(`diff`, `${ICON.diff} 差分（git ${git.files.length} ファイル）`, []);
+  d.querySelector(".fold-body").replaceWith(body);
+  let loaded = false;
+  const load = async () => {
+    if (loaded) return; loaded = true;
+    put(body, h("div", { class: "hint" }, "読み込み中…"));
+    const text = await src.patch(id);
+    if (String(snap.id) !== String(id)) return;
+    put(body, 
+      h("div", { class: "hint" }, `${base}の変化`, git.branch ? `・ブランチ ${git.branch}` : "", git.truncated ? "・長いので途中まで" : ""),
+      (git.commits || []).length > 0 && h("div", null, h("div", { class: "hint" }, "この間のコミット"), git.commits.map(c => h("div", { class: "row" }, h("code", null, c.hash), h("span", { class: "grow" }, c.subject)))),
+      text == null ? h("div", { class: "hint" }, "差分を読めませんでした。") : splitPatch(text).map(f => {
+        const g = git.files.find(x => x.path === f.path || f.path.endsWith(x.path)) || {};
+        const fd = h("details", { class: "diff-file" }, h("summary", null, h("code", { class: "grow path" }, f.path),
+          h("span", { class: "num", style: "font-size:12px;flex:none" }, h("span", { class: "plus" }, `+${g.add ?? "?"}`), " ", h("span", { class: "minus" }, `−${g.del ?? "?"}`))));
+        fd.addEventListener("toggle", () => { if (fd.open && !fd.querySelector("pre")) fd.append(patchPre(f.lines)); }, { once: false });
+        return fd;
+      }));
+  };
+  d.addEventListener("opened", load);
+  if (d.open) load();
+  return d;
+}
+function splitPatch(text) {
+  const files = [];
+  for (const line of text.split("\n")) {
+    if (line.startsWith("diff --git ")) { const m = line.match(/ b\/(.*)$/); files.push({ path: m ? m[1] : line.slice(11), lines: [] }); }
+    else if (files.length) files[files.length - 1].lines.push(line);
+  }
+  for (const f of files) while (f.lines.length && f.lines[f.lines.length - 1] === "") f.lines.pop();
+  return files;
+}
+function patchPre(lines) {
+  return h("pre", { class: "diff" }, lines.slice(0, 3000).map(l => h("span", {
+    class: l.startsWith("+++") || l.startsWith("---") || /^(index|new file|deleted file|similarity|rename|old mode|new mode)/.test(l) ? "mt"
+      : l.startsWith("@@") ? "hk" : l.startsWith("+") ? "a" : l.startsWith("-") ? "d" : null }, l || " ")));
+}
+
+// ---- present: section and whole project at the chosen time ----
+function renderNow() {
+  const s = snap.status, sec = s.section, tasks = s.tasks || [];
+  const sid = secId(sec);
+  const el = document.getElementById("now");
+  const kids = [h("div", { class: "c3-h" }, h("span", { class: "ico", "aria-hidden": "true" }, ICON.now), h("h2", null, "現在"),
+    h("span", { class: "sub" }, sel != null && String(sel) !== String(latestId()) ? `${fmt(s.run.finished_at)} 時点の状態` : "いまの状態"))];
+  if (sec) {
+    const done = sec.steps.filter(x => x.state === "done").length;
+    kids.push(h("div", { class: "prog" },
+      h("div", { class: "prog-h" }, h("b", null, "取り組み範囲: ", sec.title), h("span", { class: "num" }, `${done}/${sec.steps.length}`)),
+      h("div", { class: "segs", role: "img", "aria-label": `${sec.steps.length} 段のうち ${done} 段が完了` }, sec.steps.map(x => h("span", { class: `seg ${x.state}`, title: `${STEP[x.state]} ${x.title}` }))),
+      h("div", { class: "chips" }, h("button", { class: "btn small", type: "button", "aria-pressed": fSection === sid ? "true" : "false",
+        onclick: () => { fSection = fSection === sid ? null : sid; render(); } }, fSection === sid ? "絞り込み中 ✕" : "履歴をこの範囲で絞る"))));
+  }
+  if (tasks.length) {
+    const cnt = Object.fromEntries(COLS.map(([k]) => [k, tasks.filter(t => t.column === k).length]));
+    kids.push(h("div", { class: "prog" },
+      h("div", { class: "prog-h" }, h("b", null, "プロジェクト全体"), h("span", { class: "num" }, `完了 ${cnt.done}/${tasks.length}`)),
+      h("div", { class: "stack", role: "img", "aria-label": COLS.map(([k, n]) => `${n} ${cnt[k]}`).join("、") },
+        ["done", "review", "doing", "todo"].map(k => cnt[k] ? h("span", { class: `c-${k}`, style: `width:${cnt[k] / tasks.length * 100}%` }) : null)),
+      h("div", { class: "legend" }, ["done", "review", "doing", "todo"].map(k => h("span", null, h("i", { class: `c-${k}` }), `${COLNAME[k]} `, h("b", { class: "num" }, cnt[k]))))));
+  }
+  if (sec) kids.push(fold("steps", `段取り（${sec.steps.length}）`, sec.steps.map(x => h("div", { class: "row" }, h("span", { style: "flex:none" }, STEP[x.state]), h("span", { class: "grow", style: x.state === "doing" ? "font-weight:700" : null }, x.title)))));
+  if (tasks.length) {
+    const shown = fSection != null ? tasks.filter(t => t.section === fSection) : tasks;
+    const nextTask = s.run.next?.task;
+    kids.push(fold("kanban", `カンバン（${fSection != null ? `${fSection} の ${shown.length}` : tasks.length} 件）`, h("div", { class: "kan" },
+      COLS.map(([k, name]) => { const items = shown.filter(t => t.column === k); return items.length ? h("div", { class: "kan" },
+        h("div", { class: "kcol-h" }, name, h("span", { class: "num" }, items.length)),
+        items.map(t => h("div", { class: `kcard col-${k}${fTask === t.id ? " hit" : ""}` },
+          h("div", { class: "kt" }, t.title),
+          h("div", { class: "km" }, nextTask === t.id && h("span", { class: "next-tag" }, "次"), t.section && h("span", { class: "tag" }, t.section),
+            h("button", { class: "btn small", type: "button", "aria-pressed": fTask === t.id ? "true" : "false",
+              onclick: () => { fTask = fTask === t.id ? null : t.id; render(); } }, fTask === t.id ? "絞り込み中 ✕" : "履歴で見る")),
+          t.detail && h("details", null, h("summary", null, "くわしく"), h("p", null, t.detail))))) : null; }),
+      !shown.length && h("div", { class: "hint" }, "このセクションのタスクはありません。"))));
+  }
+  if (kids.length === 1) kids.push(h("p", { class: "hint" }, "取り組み範囲（section）もタスク（tasks）も書かれていません。"));
+  put(el, ...kids);
+}
+
+// ---- future: next and questions ----
+function renderNext() {
+  const s = snap.status, run = s.run, n = run.next, asks = run.asks || [];
+  const isLatest = String(chosenId()) === String(latestId());
+  const el = document.getElementById("next");
+  const kids = [h("div", { class: "c3-h" }, h("span", { class: "ico", "aria-hidden": "true" }, ICON.next), h("h2", null, "未来"),
+    h("span", { class: "sub" }, isLatest ? "次にやること・質問" : "この時点での予定")),];
+  if (n) {
+    kids.push(h("p", { class: "lead" }, h("span", { "aria-hidden": "true", style: "color:var(--accent)" }, "→"), h("span", null, n.title)));
+    if (n.task) { const t = (s.tasks || []).find(x => x.id === n.task); if (t) kids.push(h("div", { class: "chips" }, h("span", { class: "tag" }, "タスク ", h("b", null, t.title)))); }
+    if (n.detail || (n.steps || []).length) kids.push(fold("nextdetail", "くわしく・最初の手順", [n.detail && h("p", { class: "para" }, n.detail),
+      (n.steps || []).length > 0 && h("ol", { class: "steps-ol" }, n.steps.map(x => h("li", null, x)))]));
+  } else kids.push(h("p", { class: "hint" }, "次にやること（run.next）は書かれていません。"));
+  if (asks.length) {
+    if (isLatest) kids.push(asksBlock(asks));
+    else kids.push(fold("pastasks", `${ICON.ask} このときの質問（${asks.length}）`, asks.map(a => h("div", { class: "ask past" }, h("div", { class: "ask-q" }, a.question),
+      h("div", { class: "hint" }, a.options.map((o, i) => o + (a.recommended === i ? "（おすすめ）" : "")).join(" ／ "))))));
+  } else if (isLatest) kids.push(h("div", { class: "hint" }, `${ICON.ask} 答えが要る質問はありません。`));
+  if (!isLatest) {
+    const all = nodes(), i = all.findIndex(x => String(x.id) === String(snap.id)), after = all[i + 1];
+    if (after) kids.push(h("div", { class: "row", style: "border-top:1px solid var(--line);padding-top:8px;flex-wrap:wrap" },
+      h("span", { class: "hint", style: "flex:none" }, "実際にこのあと:"), mk(after.status), h("span", { class: "grow" }, after.title),
+      h("button", { class: "btn small", type: "button", onclick: () => choose(after.id === latestId() ? null : after.id) }, "そこへ ▶")));
+  }
+  put(el, ...kids);
+}
+
+function asksBlock(asks) {
+  const fallback = h("textarea", { id: "copy-fallback", readonly: "", hidden: "" });
+  const msg = h("span", { class: "hint", role: "status" }, "答えは自動では送られません。コピーして貼り付けます。");
+  const text = () => asks.map(a => `${a.question} → ${answers[a.id] ?? "（未回答）"}`).join("\n");
+  return h("div", { class: "fold-body", style: "padding-top:0" },
+    asks.map(a => h("div", { class: "ask", role: "group", "aria-label": a.question },
+      h("div", { class: "ask-q" }, `${ICON.ask} `, a.question),
+      h("div", { class: "opts" }, a.options.map((o, i) => h("button", {
+        class: "btn small", type: "button", "aria-pressed": answers[a.id] === o ? "true" : "false",
+        onclick: e => { answers[a.id] = o; e.currentTarget.parentNode.querySelectorAll(".btn").forEach(b => b.setAttribute("aria-pressed", b === e.currentTarget)); }
+      }, o, a.recommended === i && h("span", { class: "rec" }, "おすすめ")))))),
+    h("div", { class: "ask-foot" },
+      h("button", { class: "btn primary", type: "button", onclick: async () => {
+        const t = text(); fallback.value = t;
+        try { await navigator.clipboard.writeText(t); fallback.hidden = true; msg.textContent = "コピーしました。入力欄に貼り付けてください。"; }
+        catch { fallback.hidden = false; fallback.select(); msg.textContent = "コピーできませんでした。下の文字を選んでコピーしてください。"; }
+      } }, "答えをコピー"), msg),
+    fallback);
+}
+
+// ---- choosing a point in time ----
+async function loadSnap() {
+  const id = chosenId();
+  if (id === "now") { snap = { id: "now", status: latest, git: null }; return; }
+  const r = await src.run(id);
+  if (String(id) === String(latestId())) snap = { id, status: latest, git: r?.git || null };   // keep the file (it has history etc.)
+  else snap = r ? { id, status: r.status, git: r.git } : { id, status: latest, git: null };
+  if (!snap.status?.run) snap = { id, status: latest, git: null };
+}
+async function choose(id) {
+  sel = id;
+  openKeys.delete("diff");
+  await loadSnap();
+  render();
+}
+function render() {
+  if (!latest) return;
+  renderSignal(); renderFlow(); renderPast(); renderNow(); renderNext();
+}
+
+async function loadAll(keep) {
+  const [st, ov] = await Promise.all([src.status(), src.overview()]);
+  const sameRun = keep && latest && latest.run.id === st.run.id && latest.run.finished_at === st.run.finished_at;
+  if (!sameRun) for (const k in answers) delete answers[k];
+  latest = st; runs = prepRuns(ov || []);
+  if (!keep || (sel != null && !runs.some(r => String(r.id) === String(sel)))) sel = null;
+  document.getElementById("proj").textContent = st.project?.name || "";
+  await loadSnap();
+  render();
+}
+
+function showErr(t) { const e = document.getElementById("err"); e.textContent = t; e.hidden = !t; }
+function valid(d) { return d && d.schema === "responseboard/status@1" && d.run && d.run.title && d.run.status; }
+
+document.getElementById("file").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = async () => {
+    try { const d = JSON.parse(r.result); if (!valid(d)) throw new Error("schema が responseboard/status@1 ではないか、run.title / run.status がありません。");
+      liveInfo = null; fSection = fTask = null; src = bundleSource({ status: d, overview: [] }); showErr("");
+      document.getElementById("sample-tag").hidden = true; await loadAll(false); }
+    catch (x) { showErr(`${f.name} を読めませんでした: ${x.message}`); }
+  };
+  r.readAsText(f, "utf-8");
+});
+
+// Live mode: served by "rb serve" on this machine. Anywhere else (an Artifact, a file) shows the sample.
+async function showProject(path, fresh) {
+  src = liveSource(path);
+  if (fresh) { sel = null; fSection = fTask = null; }
+  const v = await api(`api/rev?${qp(path)}`);
+  liveInfo = { path, rev: v.rev };
+  await loadAll(!fresh);
+}
+async function poll() {
+  if (!liveInfo || document.hidden) return;
+  try {
+    const { rev } = await api(`api/rev?${qp(liveInfo.path)}`);
+    if (rev !== liveInfo.rev) await showProject(liveInfo.path, false);
+    showErr("");
+  } catch { showErr("rb serve とつながりません。rb serve が動いているか確かめてください。"); }
+}
+async function startLive() {
+  const projects = await api("api/projects");
+  if (!projects.length) throw new Error("記録された実行がまだありません。rb done などで 1 件記録してください。");
+  const selEl = document.getElementById("proj-select");
+  selEl.replaceChildren(...projects.map(p => h("option", { value: p.project_path }, `${STATUS[p.status]?.mark || "?"} ${p.project}（${p.runs} 件）`)));
+  const saved = local.get("rb.project");
+  selEl.value = projects.some(p => p.project_path === saved) ? saved : projects[0].project_path;
+  selEl.hidden = false;
+  document.getElementById("live-tag").hidden = false;
+  document.getElementById("sample-tag").hidden = true;
+  document.getElementById("proj").hidden = true;
+  selEl.addEventListener("change", () => { local.set("rb.project", selEl.value); showProject(selEl.value, true); });
+  await showProject(selEl.value, true);
+  setInterval(poll, 3000);
+}
+
+const sample = () => { src = bundleSource(JSON.parse(document.getElementById("sample").textContent)); return loadAll(false); };
+if (/^(127\.0\.0\.1|localhost)$/.test(location.hostname)) {
+  startLive().catch(e => { sample(); showErr(`ライブ表示にできませんでした: ${e.message}`); });
+} else sample();
+</script>
