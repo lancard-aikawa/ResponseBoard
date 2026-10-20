@@ -178,6 +178,20 @@ const btn = (scope, label) => [...scope.querySelectorAll("button")].find(b => b.
   btn(rd, "閉じる").click();
   clean("left list and kanban");
 
+  // t22: a user line made by 答えをコピー says so
+  ok(w.fromBoard("どこに公開しますか？ → GitHub Pages") && w.fromBoard("A？ → x\nB? → y"), "t22: a copied answer is recognised");
+  ok(!w.fromBoard("天気のウィジェットを作りたい") && !w.fromBoard("どうする？"), "t22: an ordinary message is not");
+  // t22: while a new run is in progress, the question of the run before stays in view
+  const busy = JSON.parse(d.getElementById("sample").textContent);
+  busy.status.run = { status: "running", title: "作業中の回", asks: [] };
+  w.__busy = busy;
+  await w.eval("src = bundleSource(window.__busy); loadAll(false)"); await tick();
+  ok(text("next").includes("実行中の回の前の回") && text("next").includes("どこに公開しますか？") && text("next").includes("GitHub Pages（おすすめ）"),
+    "t22: the previous run's question is shown while a run is in progress");
+  clean("in-progress run");
+  await w.eval("src = bundleSource(JSON.parse(document.getElementById('sample').textContent)); loadAll(false)"); await tick();
+  ok(!text("next").includes("実行中の回の前の回"), "t22: back to the sample, the note is gone");
+
   // markdown edge cases, rendered with the page's own md()
   const mdHtml = t => { const div = d.createElement("div"); div.append(...w.md(t)); return div; };
   let m = mdHtml("## 題\n\n- a\n  - b\n- c\n\n1. x\n2. y\n\n```js\nconst a = '<b>';\n```\n\n[link](javascript:alert(1)) [ok](https://example.com) <img src=x onerror=alert(1)>");

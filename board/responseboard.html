@@ -114,6 +114,8 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .sig-title { font-size: 17px; font-weight: 700; margin: 0; min-width: 0; flex: 1 1 220px; }
 .viewing { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 14px; border-radius: var(--r);
   background: var(--accent-soft); border: 1px dashed var(--accent); font-size: 14px; }
+#viewing { position: sticky; top: 0; z-index: 20; }
+#viewing .viewing { box-shadow: 0 2px 6px rgb(0 0 0 / .12); }
 
 /* history axis: one lane per section, runs as a chain of nodes, lanes joined top to bottom */
 .flow { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 16px; display: grid; gap: 8px; }
@@ -174,6 +176,8 @@ details.fold > summary:hover { background: var(--accent-soft); }
 /* progress bars */
 .prog { display: grid; gap: 4px; }
 .prog-h { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 13.5px; }
+.prog-h .num { white-space: nowrap; }
+.btn .cnt { white-space: nowrap; }
 .prog-h b { min-width: 0; overflow-wrap: anywhere; }
 .segs { display: flex; gap: 3px; height: 10px; }
 .seg { flex: 1; border-radius: 2px; background: var(--sunk); }
@@ -232,6 +236,7 @@ pre.diff .mt { color: var(--muted); }
 .msg .say { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
 .msg.user { background: var(--accent-soft); justify-self: end; max-width: 92%; }
 .msg.assistant { background: var(--sunk); }
+.msg .from-board { font-size: 11px; margin-left: 6px; padding: 0 6px; border-radius: 3px; background: var(--surface); color: var(--accent); }
 .msg .say.long { max-height: 18em; overflow-y: auto; }
 details.ops > summary { list-style: none; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; width: fit-content;
   font-size: 12.5px; color: var(--muted); padding: 2px 8px; border: 1px dashed var(--line); border-radius: 999px; }
@@ -1963,6 +1968,7 @@ let sel = null;                     // chosen run id, or null for the newest
 let snap = null;                    // { id, status, git } for the chosen point
 let fSection = null, fTask = null;  // cross filters
 let liveInfo = null;
+let prevAsks = null;                // { node, asks }: the recorded run before an in-progress one, when it asked something
 
 // ---- data sources ----
 function bundleSource(b) {
@@ -2272,10 +2278,13 @@ function talkGroups(items) {
   }
   return groups;
 }
+// "question？ → answer" on every line is what 答えをコピー writes; such a message was pasted from the board
+function fromBoard(text) { const ls = String(text || "").split("\n").filter(l => l.trim()); return ls.length > 0 && ls.every(l => /[？?]\s*→\s*\S/.test(l)); }
 function talkView(t, n) {
   const who = { user: "あなた", assistant: "AI" };
   return [h("div", { class: "talk" }, talkGroups(t.items).map(g => {
-    if (!g.ops) return h("div", { class: `msg ${g.role}` }, h("span", { class: "who" }, who[g.role], g.at && h("span", { class: "num" }, ` ${fmt(g.at)}`)),
+    if (!g.ops) return h("div", { class: `msg ${g.role}` }, h("span", { class: "who" }, who[g.role], g.at && h("span", { class: "num" }, ` ${fmt(g.at)}`),
+        g.role === "user" && fromBoard(g.text) && h("span", { class: "from-board", title: "ボードの「答えをコピー」で作った文" }, `${ICON.ask} 質問への答え（ボードから）`)),
       g.role === "assistant" ? h("div", { class: "md" }, md(g.text)) : h("div", { class: "say" }, g.text));
     const edits = g.items.filter(x => x.role === "edit").length, tools = g.items.length - edits;
     return h("details", { class: "ops" }, h("summary", null, [tools > 0 && `${ICON.tool} 操作 ${tools}`, edits > 0 && `${ICON.edit} 編集 ${edits}`].filter(Boolean).join(" ・ ")),
@@ -2291,7 +2300,7 @@ function kanbanView(st) {
   const routed = id => into.filter(x => x.task === id);
   const shown = fSection != null ? tasks.filter(t => t.section === fSection) : tasks;
   const nextTask = st?.run?.next?.task;
-  if (!shown.length) return h("div", { class: "hint" }, fSection != null ? "このセクションのタスクはありません。" : "タスク（tasks）が書かれていません。");
+  if (!shown.length) return h("div", { class: "hint" }, fSection != null ? "このセクションのタスクはありません。" : "タスクはまだありません。");
   return [
     fSection != null && h("div", { class: "chips" }, h("span", { class: "hint" }, "セクションで絞り込み中"),
       h("button", { class: "btn small filter", type: "button", "aria-pressed": "true", onclick: () => { fSection = null; render(); reopenDlg(); } }, `セクション: ${fSection} ✕`)),
@@ -2326,7 +2335,7 @@ function diffView(git, text) {
     h("div", { class: "row" }, h("span", { class: "hint grow" }, `${base}の変化`, git.branch ? `・ブランチ ${git.branch}` : "", git.truncated ? "・長いので途中まで" : ""),
       files.length > 1 && h("button", { class: "btn small", type: "button", onclick: () => all(true) }, "すべて開く"),
       files.length > 1 && h("button", { class: "btn small", type: "button", onclick: () => all(false) }, "すべて畳む")),
-    (git.commits || []).length > 0 && h("div", null, h("div", { class: "hint" }, "この間のコミット"), git.commits.map(c => h("div", { class: "row" }, h("code", null, c.hash), h("span", { class: "grow" }, c.subject)))),
+    (git.commits || []).length > 0 && h("div", null, h("div", { class: "hint" }, "この間のコミット"), git.commits.map(c => h("div", { class: "row", style: "font-size:13px" }, h("code", null, c.hash), h("span", { class: "grow" }, c.subject)))),
     items];
 }
 const DLG = {
@@ -2343,8 +2352,8 @@ const DLG = {
     load: async n => kanbanView(n.id === "now" ? latest : String(n.id) === String(snap?.id) ? snap.status : (await src.run(n.id))?.status) },
 };
 DLG.left = { has: () => true, icon: ICON.ledger, name: "残したことの一覧",
-  label: n => [`${ICON.ledger} 残したこと（全体）`, h("span", { class: "cnt" }, h("span", { class: "num" }, n.left.all), " 件"),
-    n.left.left > 0 && h("span", { class: "cnt" }, `${ICON.left} 全体の置き去り `, h("span", { class: "num" }, n.left.left))],
+  label: n => [`${ICON.ledger} 全体の残したこと`, h("span", { class: "cnt" }, h("span", { class: "num" }, n.left.all), " 件"),
+    n.left.left > 0 && h("span", { class: "cnt", title: "全体の置き去り（行き先未定）" }, `${ICON.left} `, h("span", { class: "num" }, n.left.left))],
   foot: "プロジェクト全体。その回の時点まで。「その回へ」で履歴を移る。Esc で閉じる",
   load: async n => leftView(n) };
 DLG.runs = { has: () => true, icon: "☰", name: "回の一覧",
@@ -2451,7 +2460,7 @@ function renderNow() {
     const n = nodes().find(x => String(x.id) === String(snap.id)) || { id: snap.id };
     kids.push(h("div", { class: "chips" }, dlgButton("left", { ...n, left: leftCount(upToChosen()) })));
   }
-  if (kids.length === 1) kids.push(h("p", { class: "hint" }, "取り組み範囲（section）もタスク（tasks）も書かれていません。"));
+  if (kids.length === 1) kids.push(h("p", { class: "hint" }, "取り組み範囲もタスクもまだありません。"));
   put(el, ...kids);
 }
 
@@ -2505,11 +2514,17 @@ function renderNext() {
     if (n.task) { const t = (s.tasks || []).find(x => x.id === n.task); if (t) kids.push(h("div", { class: "chips" }, h("span", { class: "tag" }, "タスク ", h("b", null, t.title)))); }
     if (n.detail || (n.steps || []).length) kids.push(fold("nextdetail", "くわしく・最初の手順", [n.detail && h("p", { class: "para" }, n.detail),
       (n.steps || []).length > 0 && h("ol", { class: "steps-ol" }, n.steps.map(x => h("li", null, x)))]));
-  } else kids.push(h("p", { class: "hint" }, "次にやること（run.next）は書かれていません。"));
+  } else kids.push(h("p", { class: "hint" }, run.status === "running" ? "実行中。次にやることは、この回が終わると出る。" : "次にやることは書かれていません。"));
   if (asks.length) {
     if (isLatest) kids.push(asksBlock(asks));
     else kids.push(fold("pastasks", `${ICON.ask} このときの質問（${asks.length}）`, asks.map(a => h("div", { class: "ask past" }, h("div", { class: "ask-q" }, a.question),
       h("div", { class: "hint" }, a.options.map((o, i) => o + (a.recommended === i ? "（おすすめ）" : "")).join(" ／ "))))));
+  } else if (isLatest && prevAsks) {
+    // the new run may have started from the answer, so this is shown as "the one before", not as unanswered
+    kids.push(h("div", { class: "ask past" }, h("div", { class: "hint" }, `${ICON.ask} 実行中の回の前の回（${fmt(prevAsks.node.finished_at)}「${prevAsks.node.title}」）の質問`),
+      prevAsks.asks.map(a => [h("div", { class: "ask-q" }, a.question),
+        h("div", { class: "hint" }, a.options.map((o, i) => o + (a.recommended === i ? "（おすすめ）" : "")).join(" ／ "))]),
+      h("div", { class: "hint" }, "答えを送ったあとなら、この回の結果を待つ。まだなら答えを送る。")));
   } else if (isLatest) kids.push(h("div", { class: "hint" }, `${ICON.ask} 答えが要る質問はありません。`));
   if (!isLatest) {
     const all = nodes(), i = all.findIndex(x => String(x.id) === String(snap.id)), after = all[i + 1];
@@ -2567,6 +2582,12 @@ async function loadAll(keep) {
   latest = st; runs = prepRuns(ov || []);
   if (!keep || (sel != null && !runs.some(r => String(r.id) === String(sel)))) sel = null;
   document.getElementById("proj").textContent = st.project?.name || "";
+  prevAsks = null;
+  const last = runs[runs.length - 1];
+  if (st.run.status === "running" && latestId() === "now" && last?.status === "needs_you") {
+    const r = await src.run(last.id);
+    if (r?.status?.run?.asks?.length) prevAsks = { node: last, asks: r.status.run.asks };
+  }
   await loadSnap();
   render();
 }
@@ -2593,7 +2614,13 @@ async function showProject(path, fresh) {
   const v = await api(`api/rev?${qp(path)}`);
   liveInfo = { path, rev: v.rev };
   await loadAll(!fresh);
+  if (!fresh) refreshProjects().catch(() => {});
 }
+async function refreshProjects() {
+  const projects = await api("api/projects"), selEl = document.getElementById("proj-select");
+  for (const o of selEl.options) { const p = projects.find(x => x.project_path === o.value); if (p) o.textContent = projectLabel(p); }
+}
+const projectLabel = p => `${STATUS[p.status]?.mark || "?"} ${p.project}（${p.runs} 件）`;
 async function poll() {
   if (!liveInfo || document.hidden) return;
   try {
@@ -2606,7 +2633,7 @@ async function startLive() {
   const projects = await api("api/projects");
   if (!projects.length) throw new Error("記録された実行がまだありません。rb done などで 1 件記録してください。");
   const selEl = document.getElementById("proj-select");
-  selEl.replaceChildren(...projects.map(p => h("option", { value: p.project_path }, `${STATUS[p.status]?.mark || "?"} ${p.project}（${p.runs} 件）`)));
+  selEl.replaceChildren(...projects.map(p => h("option", { value: p.project_path }, projectLabel(p))));
   const saved = local.get("rb.project");
   selEl.value = projects.some(p => p.project_path === saved) ? saved : projects[0].project_path;
   selEl.hidden = false;
