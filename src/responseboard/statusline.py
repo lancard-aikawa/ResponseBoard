@@ -1,6 +1,6 @@
 """One line for a terminal status bar, built from .responseboard/status.json.
 
-  ▲ あなたの番 2件 │ 手元のボードを作った │ ■■■□ 3/4 │ 5分前
+  ▲ あなたの番 2件 │ 手元のボードを作った │ ■■■□ 3/4 │ +120 −8 │ 5分前
 
 If a turn started after status.json was last written (.responseboard/turn.json),
 the line says the work is in progress and shows the previous result dimmed.
@@ -14,7 +14,7 @@ from pathlib import Path
 
 from . import status as st
 
-RESET, DIM = "\033[0m", "\033[2m"
+RESET, DIM, GREEN, RED = "\033[0m", "\033[2m", "\033[32m", "\033[31m"
 COLOR = {"done": "\033[32m", "needs_you": "\033[33m", "failed": "\033[31m", "running": "\033[34m"}
 LABEL = {"done": "● 完了", "needs_you": "▲ あなたの番", "failed": "✕ 失敗", "running": "◐ 実行中"}
 SEP = " │ "
@@ -64,6 +64,9 @@ def line(root: Path, color: bool = True, now: float | None = None) -> str:
     if steps:
         done = sum(1 for s in steps if s.get("state") == "done")
         parts.append("■" * done + "□" * (len(steps) - done) + f" {done}/{len(steps)}")
+    g = d.get("git") or {}
+    if g.get("files") and g.get("run") == run.get("id"):  # rb wrote it for this very run
+        parts.append(c(GREEN, f"+{g.get('add', 0)}") + " " + c(RED, f"−{g.get('del', 0)}"))
     failed = sum(1 for x in run.get("checks") or [] if x.get("result") == "fail")
     if failed:
         parts.append(c(COLOR["failed"], f"✕ 確認 {failed}"))

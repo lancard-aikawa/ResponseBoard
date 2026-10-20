@@ -192,6 +192,69 @@ const btn = (scope, label) => [...scope.querySelectorAll("button")].find(b => b.
   await w.eval("src = bundleSource(JSON.parse(document.getElementById('sample').textContent)); loadAll(false)"); await tick();
   ok(!text("next").includes("実行中の回の前の回"), "t22: back to the sample, the note is gone");
 
+  // t14: ← → move between runs, and the chosen run lives in the URL
+  const key = (k, target = d.body) => target.dispatchEvent(new w.KeyboardEvent("keydown", { key: k, bubbles: true }));
+  d.querySelector('.node[data-id="7"]').click(); await tick();
+  ok(w.location.hash === "", "t14: no hash at the newest run");
+  key("ArrowLeft"); await tick();
+  ok(pressed()?.getAttribute("data-id") === "6", "t14: ← moves to the run before");
+  ok(w.location.hash === "#run=6", `t14: the URL keeps the chosen run (got ${w.location.hash})`);
+  key("ArrowRight"); await tick();
+  ok(pressed()?.getAttribute("data-id") === "7" && w.location.hash === "", "t14: → moves back to the newest and clears the URL");
+  key("ArrowRight"); await tick();
+  ok(pressed()?.getAttribute("data-id") === "7", "t14: → at the newest stays");
+  d.querySelector('.node[data-id="4"]').click(); await tick();
+  btn(d.getElementById("past"), "会話を読む").click(); await tick();
+  key("ArrowRight"); await tick(); await tick();
+  ok(dlg.open && pressed()?.getAttribute("data-id") === "5" && dlg.textContent.includes("手元のサーバで開いて"), "t14: → inside the dialog moves the dialog's run");
+  // t14: search inside the conversation
+  const tq = dlg.querySelector(".talk-q input");
+  key("ArrowLeft", tq); await tick();
+  ok(pressed()?.getAttribute("data-id") === "5", "t14: arrows typed in the search box do not move the run");
+  const before = dlg.querySelectorAll(".talk > *").length;
+  tq.value = "サーバ"; tq.dispatchEvent(new w.Event("input")); await tick();
+  const marks = dlg.querySelectorAll(".talk mark.hl");
+  ok(marks.length > 0 && [...marks].every(m => m.textContent === "サーバ"), `t14: search marks every hit (${marks.length})`);
+  ok(dlg.querySelectorAll(".talk > *").length < before && /件の発言に \d+ か所/.test(dlg.querySelector(".talk-q").textContent), "t14: search leaves only the matching messages and counts them");
+  tq.value = "見つからない語"; tq.dispatchEvent(new w.Event("input")); await tick();
+  ok(dlg.querySelectorAll(".talk > *").length === 0 && dlg.querySelector(".talk-q").textContent.includes("見つかりません"), "t14: no hit says so");
+  tq.value = ""; tq.dispatchEvent(new w.Event("input")); await tick();
+  ok(dlg.querySelectorAll(".talk > *").length === before && !dlg.querySelector("mark.hl"), "t14: clearing the search shows everything again");
+  btn(dlg, "閉じる").click();
+  // t14: the chosen run as Markdown
+  d.querySelector('.node[data-id="4"]').click(); await tick();
+  btn(d.getElementById("past"), "Markdown でコピー").click(); await tick();
+  const mdText = d.querySelector("#past .copy-fallback").value;
+  ok(mdText.startsWith("## ") && mdText.includes("天気 API をつなぐ途中で止まった") && mdText.includes("### 次にやること") && mdText.includes("手元のサーバで開き直す"),
+    "t14: Markdown copy has the title and the next step");
+  ok(mdText.includes("`api.js`") && !/\[object|undefined|null/.test(mdText), "t14: Markdown copy lists the changed files, with no stray text");
+  // t14: a link with #run= opens that run
+  w.location.hash = "#run=3"; await tick(); await tick();
+  ok(pressed()?.getAttribute("data-id") === "3", "t14: a #run= link chooses that run");
+  d.querySelector('.node[data-id="7"]').click(); await tick();
+  clean("t14");
+
+  // t15: the map of sections, one row each
+  const map = d.querySelector('#flow details[data-key="map"]');
+  ok(map && !map.open && map.querySelector("summary").textContent.includes("3 個") && !map.querySelector("summary").textContent.includes("戻った"),
+    "t15: the section map is folded, 3 sections, no return");
+  ok(map.querySelectorAll(".mnode").length === 7 && map.querySelectorAll(".smap-area path").length === 6, "t15: one dot per run, one line between each");
+  ok(map.querySelectorAll(".smap-labels span").length === 3, "t15: one row per section");
+  map.querySelectorAll(".mnode")[1].click(); await tick();
+  ok(pressed()?.getAttribute("data-id") === "2", "t15: a dot on the map chooses that run");
+  // a later run that goes back to section 1 joins its row again
+  const back = JSON.parse(d.getElementById("sample").textContent);
+  const r7 = back.overview.find(r => String(r.id) === "7");
+  r7.section_id = back.overview.find(r => String(r.id) === "1").section_id;
+  back.status.section = { id: r7.section_id, title: r7.section_id, steps: [] };
+  w.__back = back;
+  await w.eval("src = bundleSource(window.__back); loadAll(false)"); await tick();
+  const map2 = d.querySelector('#flow details[data-key="map"]');
+  ok(map2.querySelector("summary").textContent.includes("戻った 1 回") && map2.querySelectorAll("path.back").length === 1, "t15: going back to section 1 is drawn as one return");
+  ok(map2.querySelectorAll(".smap-labels span").length === 2, "t15: the return uses section 1's row, not a new one (section 3 had only run 7)");
+  clean("section map");
+  await w.eval("src = bundleSource(JSON.parse(document.getElementById('sample').textContent)); loadAll(false)"); await tick();
+
   // markdown edge cases, rendered with the page's own md()
   const mdHtml = t => { const div = d.createElement("div"); div.append(...w.md(t)); return div; };
   let m = mdHtml("## 題\n\n- a\n  - b\n- c\n\n1. x\n2. y\n\n```js\nconst a = '<b>';\n```\n\n[link](javascript:alert(1)) [ok](https://example.com) <img src=x onerror=alert(1)>");

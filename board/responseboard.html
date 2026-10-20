@@ -57,6 +57,11 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); f
 .flow-legend .mark { font-size: 12px; }
 .runq { font: inherit; font-size: 14px; width: 100%; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;
   background: var(--surface); color: var(--fg); }
+/* stays in view while the hits scroll by */
+.talk-q { display: flex; gap: 8px; align-items: center; position: sticky; top: -14px; z-index: 1; margin: -14px -14px 0; padding: 10px 14px;
+  background: var(--surface); border-bottom: 1px solid var(--line); }
+.talk-q .runq { flex: 1; min-width: 0; }
+mark.hl { background: var(--warn-soft); color: var(--fg); outline: 1px solid var(--warn); border-radius: 2px; padding: 0 1px; }
 .runlist { display: grid; gap: 4px; grid-auto-rows: max-content; }
 .runrow { font: inherit; font-size: 13.5px; display: flex; gap: 8px; align-items: baseline; width: 100%; text-align: left; cursor: pointer;
   padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--fg); }
@@ -140,6 +145,24 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .node.dim { opacity: .28; }
 .node.now { border-style: dashed; }
 .node.s-running { font-size: 19px; }
+.smap { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px; align-items: start; }
+.smap-labels { display: grid; grid-auto-rows: var(--row); padding-top: var(--pad); margin-top: calc(var(--row) / -2); }
+.smap-labels > span { font-size: 12px; font-weight: 700; display: flex; align-items: center; white-space: nowrap; max-width: 12em; overflow: hidden; text-overflow: ellipsis; }
+.smap-scroll { overflow-x: auto; min-width: 0; padding-bottom: 4px; }
+.smap-area { position: relative; }
+.smap-area svg { position: absolute; inset: 0; overflow: visible; }
+.smap-area path { fill: none; stroke: var(--line); stroke-width: 2; }
+.smap-area path.back { stroke: var(--accent); stroke-dasharray: 4 3; }
+.mnode { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; padding: 0; border-radius: 50%; cursor: pointer;
+  border: 2px solid var(--c); background: var(--c-soft); transition: transform .08s, opacity .12s; }
+.mnode:hover { transform: scale(1.35); }
+.mnode:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.mnode[aria-pressed="true"] { background: var(--c); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--c); }
+.mnode.dim { opacity: .28; }
+.mnode.now { border-style: dashed; }
+.smap-key { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.smap-key i { display: inline-block; width: 22px; height: 0; border-top: 2px solid var(--line); vertical-align: middle; margin-right: 4px; }
+.smap-key i.back { border-top: 2px dashed var(--accent); }
 .flow-cap { font-size: 13px; color: var(--muted); min-height: 1.4em; }
 .older summary { width: fit-content; }
 
@@ -213,7 +236,7 @@ details.fold > summary:hover { background: var(--accent-soft); }
 .btn[aria-pressed="true"] .rec { background: transparent; color: inherit; opacity: .85; }
 .ask-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .hint { font-size: 12.5px; color: var(--muted); }
-#copy-fallback { width: 100%; min-height: 4.5em; font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--fg); padding: 8px; }
+#copy-fallback, .copy-fallback { width: 100%; min-height: 4.5em; font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--fg); padding: 8px; }
 .steps-ol { margin: 0; padding-left: 1.5em; display: grid; gap: 2px; font-size: 14px; }
 .steps-ol li::marker { font-family: var(--font-num); color: var(--muted); }
 
@@ -440,6 +463,12 @@ dialog.dlg::backdrop { background: rgba(10, 18, 26, .55); }
     "detail": "GitHub Pages に置く。終わりの条件: 公開の URL で開ける。"
    }
   ],
+  "git": {
+   "run": "2026-10-18T16:00",
+   "files": 1,
+   "add": 4,
+   "del": 0
+  },
   "history": [
    {
     "finished_at": "2026-10-18T10:05:00+09:00",
@@ -2102,18 +2131,53 @@ function renderFlow() {
     filt.push(h("button", { class: "btn small filter", type: "button", "aria-pressed": "true", onclick: () => { fTask = null; render(); } }, `タスク: ${t ? t.title : fTask} ✕`)); }
   put(el, h("section", { class: "flow", "aria-label": "履歴" },
     h("div", { class: "flow-h" },
-      h("h2", null, `${ICON.flow} 履歴`), h("span", { class: "hint" }, "セクションごとの流れ。丸を押すとその時点を見る"),
+      h("h2", null, `${ICON.flow} 履歴`), h("span", { class: "hint" }, "セクションごとの流れ。丸を押すとその時点を見る（← → キーでも移る）"),
       h("span", { class: "spacer" }), ...filt,
       h("button", { class: "btn small dlg-open", type: "button", onclick: () => openDlg("runs", chosenId()) }, "☰ 回の一覧"),
       (fSection != null || fTask) && h("span", { class: "tag" }, "当てはまる ", h("b", { class: "num" }, hits.length), " 件"),
-      h("button", { class: "btn small", type: "button", onclick: () => step(-1), disabled: (order.length ? at === 0 : cur === String(all[0]?.id)) || null }, "◀ 前の回"),
-      h("button", { class: "btn small", type: "button", onclick: () => step(1), disabled: (order.length ? at === order.length - 1 : cur === String(all[all.length - 1]?.id)) || null }, "次の回 ▶")),
+      h("button", { class: "btn small", type: "button", "data-step": "-1", onclick: () => step(-1), disabled: (order.length ? at === 0 : cur === String(all[0]?.id)) || null }, "◀ 前の回"),
+      h("button", { class: "btn small", type: "button", "data-step": "1", onclick: () => step(1), disabled:(order.length ? at === order.length - 1 : cur === String(all[all.length - 1]?.id)) || null }, "次の回 ▶")),
     h("div", { class: "legend flow-legend", "aria-label": "丸の見方と数" }, Object.keys(STATUS).map(k => h("span", null, mk(k), ` ${STATUS[k].label} `,
       h("b", { class: "num" }, all.filter(n => n.status === k).length))), h("span", null, "全 ", h("b", { class: "num" }, all.length), " 回")),
+    lanes.length > 1 && sectionMap(all, lanes, cur, cap),
     older.length > 0 && fold("older", `前のセクション ${older.length} 個`, h("div", { class: "lanes" }, older.map(lane)), "older"),
     h("div", { class: "lanes" }, recent.map(lane)),
     capEl));
   cap(null);
+}
+
+// Which section each run was in, one row per section: going on to a new section branches down,
+// coming back to an earlier one joins its row again (dashed). The lanes above only show time order.
+function sectionMap(all, lanes, cur, cap) {
+  const rows = [...new Set(all.map(n => n.section_id ?? ""))];
+  const X = 18, ROW = 26, PAD = 12, NS = "http://www.w3.org/2000/svg";
+  const pt = all.map((n, i) => ({ n, x: PAD + i * X, y: PAD + rows.indexOf(n.section_id ?? "") * ROW }));
+  const seen = new Set(), backs = new Set();
+  for (const l of lanes) { if (seen.has(l.id ?? "")) backs.add(l.items[0]); seen.add(l.id ?? ""); }
+  const svg = document.createElementNS(NS, "svg");
+  for (let i = 1; i < pt.length; i++) {
+    const a = pt[i - 1], b = pt[i], path = document.createElementNS(NS, "path");
+    path.setAttribute("d", a.y === b.y ? `M${a.x} ${a.y}H${b.x}` : `M${a.x} ${a.y}C${a.x + X / 2} ${a.y} ${b.x - X / 2} ${b.y} ${b.x} ${b.y}`);
+    if (backs.has(b.n)) path.setAttribute("class", "back");
+    svg.append(path);
+  }
+  const area = h("div", { class: "smap-area", style: `width:${PAD * 2 + (all.length - 1) * X}px;height:${PAD * 2 + (rows.length - 1) * ROW}px` }, svg,
+    pt.map(({ n, x, y }) => h("button", { class: `mnode s-${n.status}${matches(n) ? "" : " dim"}${n.id === "now" ? " now" : ""}`, type: "button",
+      style: `left:${x}px;top:${y}px`, "aria-pressed": String(n.id) === cur ? "true" : "false",
+      title: `${n.section_id || "（セクションなし）"} ・ ${fmt(n.finished_at)} ${STATUS[n.status]?.label || ""}: ${n.title}`,
+      "aria-label": `${n.section_id || ""} ${fmt(n.finished_at)} ${n.title}`,
+      onclick: () => choose(n.id === latestId() ? null : n.id), onmouseenter: () => cap(n), onfocus: () => cap(n), onmouseleave: () => cap(null) })));
+  const scroll = h("div", { class: "smap-scroll" }, area);
+  const body = [h("div", { class: "smap", style: `--row:${ROW}px;--pad:${PAD}px` },
+      h("div", { class: "smap-labels" }, rows.map(r => h("span", { title: r }, r || "（なし）"))), scroll),
+    h("div", { class: "smap-key" }, h("span", null, h("i"), "次のセクションへ"), h("span", null, h("i", { class: "back" }, ""), "前のセクションに戻った"),
+      h("span", null, "丸を押すとその時点を見る"))];
+  const d = fold("map", `⇅ セクションの行き来（${rows.length} 個${backs.size ? `・戻った ${backs.size} 回` : ""}）`, body);
+  // keep the chosen run in view: the newest is at the right end
+  const show = () => { const b = area.querySelector('.mnode[aria-pressed="true"]'); if (b) scroll.scrollLeft = Math.max(0, b.offsetLeft - scroll.clientWidth / 2); };
+  d.addEventListener("opened", show);
+  if (d.open) requestAnimationFrame(show);
+  return d;
 }
 
 // a folded part whose open state survives redraws
@@ -2174,6 +2238,7 @@ function renderPast() {
         h("b", { class: "num" }, leftNow.filter(x => later[x.title]?.state === "left").length))),
     run.summary && h("p", { class: "para" }, run.summary),
     (DLG.talk.has(n || {}) || DLG.diff.has(n || {})) && h("div", { class: "chips" }, DLG.talk.has(n) && dlgButton("talk", n), DLG.diff.has(n) && dlgButton("diff", n)),
+    h("div", { class: "chips" }, mdCopy()),
     did.length > 0 && fold("did", `${ICON.did} したこと`, did),
     nd.length > 0 && fold("notdone", `${ICON.notDone} 残したこと（${ndCount}）`, nd),
     (run.notes || s.source?.written_by) && fold("notes", `${ICON.note} 説明`, [run.notes && h("div", { class: "md" }, md(run.notes)),
@@ -2280,19 +2345,49 @@ function talkGroups(items) {
 }
 // "question？ → answer" on every line is what 答えをコピー writes; such a message was pasted from the board
 function fromBoard(text) { const ls = String(text || "").split("\n").filter(l => l.trim()); return ls.length > 0 && ls.every(l => /[？?]\s*→\s*\S/.test(l)); }
+// wrap each hit of q inside el's text in <mark class="hl">; returns how many
+function highlight(el, q) {
+  const low = q.toLowerCase(), hits = [];
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let t; (t = walk.nextNode());) if (t.data.toLowerCase().includes(low)) hits.push(t);
+  let count = 0;
+  for (const t of hits) {
+    const s = t.data, parts = [];
+    let i = 0, j;
+    while ((j = s.toLowerCase().indexOf(low, i)) >= 0) { parts.push(s.slice(i, j), h("mark", { class: "hl" }, s.slice(j, j + q.length))); i = j + q.length; count++; }
+    parts.push(s.slice(i));
+    t.replaceWith(...parts.filter(p => p !== ""));
+  }
+  return count;
+}
 function talkView(t, n) {
+  const groups = talkGroups(t.items);
+  const text = g => g.ops ? g.items.map(x => x.text).join("\n") : String(g.text || "");
+  const list = h("div", { class: "talk" }), cnt = h("span", { class: "hint", role: "status" });
+  const draw = q => {
+    const shown = q ? groups.filter(g => text(g).toLowerCase().includes(q.toLowerCase())) : groups;
+    put(list, shown.map(g => talkItem(g, n)));
+    if (!q) { put(cnt); return; }
+    list.querySelectorAll("details.ops").forEach(d => { d.open = true; });
+    const hits = highlight(list, q);
+    put(cnt, shown.length ? `${shown.length} 件の発言に ${hits} か所` : "見つかりません");
+    list.querySelector("mark.hl")?.scrollIntoView?.({ block: "center" });
+  };
+  draw("");
+  return [h("div", { class: "talk-q" }, h("input", { class: "runq", type: "search", placeholder: "会話の中を探す", "aria-label": "会話の中を探す",
+    oninput: e => draw(e.target.value.trim()) }), cnt), list, t.truncated && h("div", { class: "hint" }, "長いので途中まで")];
+}
+function talkItem(g, n) {
   const who = { user: "あなた", assistant: "AI" };
-  return [h("div", { class: "talk" }, talkGroups(t.items).map(g => {
-    if (!g.ops) return h("div", { class: `msg ${g.role}` }, h("span", { class: "who" }, who[g.role], g.at && h("span", { class: "num" }, ` ${fmt(g.at)}`),
-        g.role === "user" && fromBoard(g.text) && h("span", { class: "from-board", title: "ボードの「答えをコピー」で作った文" }, `${ICON.ask} 質問への答え（ボードから）`)),
-      g.role === "assistant" ? h("div", { class: "md" }, md(g.text)) : h("div", { class: "say" }, g.text));
-    const edits = g.items.filter(x => x.role === "edit").length, tools = g.items.length - edits;
-    return h("details", { class: "ops" }, h("summary", null, [tools > 0 && `${ICON.tool} 操作 ${tools}`, edits > 0 && `${ICON.edit} 編集 ${edits}`].filter(Boolean).join(" ・ ")),
-      // only files inside the project can be in its git diff; outside ones are absolute paths
-      g.items.map(x => x.role === "edit" && DLG.diff.has(n || {}) && !/^([A-Za-z]:|\/)/.test(x.text)
-        ? h("button", { class: "op edit", type: "button", title: "差分でこのファイルを見る", onclick: () => openDlg("diff", n.id, { file: x.text }) }, `${ICON.edit} ${x.text} → ${ICON.diff}`)
-        : h("div", { class: `op ${x.role}` }, x.role === "edit" ? `${ICON.edit} ${x.text}` : `${ICON.tool} ${x.text}`)));
-  })), t.truncated && h("div", { class: "hint" }, "長いので途中まで")];
+  if (!g.ops) return h("div", { class: `msg ${g.role}` }, h("span", { class: "who" }, who[g.role], g.at && h("span", { class: "num" }, ` ${fmt(g.at)}`),
+      g.role === "user" && fromBoard(g.text) && h("span", { class: "from-board", title: "ボードの「答えをコピー」で作った文" }, `${ICON.ask} 質問への答え（ボードから）`)),
+    g.role === "assistant" ? h("div", { class: "md" }, md(g.text)) : h("div", { class: "say" }, g.text));
+  const edits = g.items.filter(x => x.role === "edit").length, tools = g.items.length - edits;
+  return h("details", { class: "ops" }, h("summary", null, [tools > 0 && `${ICON.tool} 操作 ${tools}`, edits > 0 && `${ICON.edit} 編集 ${edits}`].filter(Boolean).join(" ・ ")),
+    // only files inside the project can be in its git diff; outside ones are absolute paths
+    g.items.map(x => x.role === "edit" && DLG.diff.has(n || {}) && !/^([A-Za-z]:|\/)/.test(x.text)
+      ? h("button", { class: "op edit", type: "button", title: "差分でこのファイルを見る", onclick: () => openDlg("diff", n.id, { file: x.text }) }, `${ICON.edit} ${x.text} → ${ICON.diff}`)
+      : h("div", { class: `op ${x.role}` }, x.role === "edit" ? `${ICON.edit} ${x.text}` : `${ICON.tool} ${x.text}`)));
 }
 function kanbanView(st) {
   const tasks = st?.tasks || [];
@@ -2391,8 +2486,8 @@ async function openDlg(kind, id, opt = {}) {
           "aria-selected": k === kind ? "true" : "false", onclick: () => k !== kind && openDlg(k, n.id) }, `${DLG[k].icon} ${DLG[k].name}`)))
       : h("h2", { id: "dlg-h" }, `${K.icon} ${K.name}`),
       h("span", { class: "t" }, mk(n.status), " ", h("span", { class: "num" }, fmt(n.finished_at)), " ", n.title),
-      h("button", { class: "btn small", type: "button", disabled: at <= 0 || null, onclick: () => go(-1) }, "◀ 前の回"),
-      h("button", { class: "btn small", type: "button", disabled: at >= list.length - 1 || null, onclick: () => go(1) }, "次の回 ▶"),
+      h("button", { class: "btn small", type: "button", "data-step": "-1", disabled: at <= 0 || null, onclick: () => go(-1) }, "◀ 前の回"),
+      h("button", { class: "btn small", type: "button", "data-step": "1", disabled: at >= list.length - 1 || null, onclick: () => go(1) }, "次の回 ▶"),
       h("button", { class: "btn small", type: "button", onclick: () => closeDlg(dlg) }, "閉じる ✕")),
     body,
     h("div", { class: "dlg-f hint" }, K.foot));
@@ -2535,6 +2630,35 @@ function renderNext() {
   put(el, ...kids);
 }
 
+// copy text, or show it selected in the fallback box when the clipboard is not allowed
+async function copyText(t, msg, fallback, done) {
+  fallback.value = t;
+  try { await navigator.clipboard.writeText(t); fallback.hidden = true; msg.textContent = done; }
+  catch { fallback.hidden = false; fallback.select(); msg.textContent = "コピーできませんでした。下の文字を選んでコピーしてください。"; }
+}
+// the chosen run as Markdown, to paste into an issue, a chat or notes
+function runMarkdown() {
+  const s = snap.status, run = s.run, git = snap.git;
+  const L = [`## ${STATUS[run.status]?.mark || ""} ${run.title}`, "",
+    `- ${STATUS[run.status]?.label || run.status}${run.finished_at ? ` ・ ${fmt(run.finished_at)}` : ""}${s.project?.name ? ` ・ ${s.project.name}` : ""}${s.section?.title ? ` ・ ${s.section.title}` : ""}`];
+  if (run.summary) L.push("", run.summary);
+  const files = git?.files?.length ? git.files.map(f => `- \`${f.path}\` +${f.add ?? "?"} −${f.del ?? "?"}`) : (run.changes || []).map(c => `- ${KIND[c.kind] || c.kind} \`${c.path}\``);
+  const sec = (name, xs) => { if (xs.length) L.push("", `### ${name}`, "", ...xs); };
+  sec("変えたファイル", files);
+  sec("確かめたこと", (run.checks || []).map(c => `- ${RESULT[c.result] || c.result} ${c.name}${c.detail ? `（${c.detail}）` : ""}`));
+  sec("残したこと", (run.not_done || []).map(x => `- ${x.title}${x.reason ? ` — ${x.reason}` : ""}（${x.task ? `→ タスク ${taskTitle(x.task)}` : x.drop ? "やらない" : "置き去り"}）`));
+  const nx = run.next;
+  if (nx) sec("次にやること", [`- ${nx.title}`, ...(nx.detail ? [`  ${nx.detail}`] : []), ...(nx.steps || []).map((x, i) => `  ${i + 1}. ${x}`)]);
+  sec("質問", (run.asks || []).map(a => `- ${a.question}（${a.options.map((o, i) => o + (a.recommended === i ? "・おすすめ" : "")).join(" ／ ")}）`));
+  return L.join("\n") + "\n";
+}
+function mdCopy() {
+  const fallback = h("textarea", { class: "copy-fallback", readonly: "", hidden: "" });
+  const msg = h("span", { class: "hint", role: "status" });
+  return [h("button", { class: "btn small", type: "button", title: "この回の要約を Markdown でコピーする",
+    onclick: () => copyText(runMarkdown(), msg, fallback, "コピーしました。") }, "⧉ Markdown でコピー"), msg, fallback];
+}
+
 function asksBlock(asks) {
   const fallback = h("textarea", { id: "copy-fallback", readonly: "", hidden: "" });
   const msg = h("span", { class: "hint", role: "status" }, "答えは自動では送られません。コピーして貼り付けます。");
@@ -2547,11 +2671,7 @@ function asksBlock(asks) {
         onclick: e => { answers[a.id] = o; e.currentTarget.parentNode.querySelectorAll(".btn").forEach(b => b.setAttribute("aria-pressed", b === e.currentTarget)); }
       }, o, a.recommended === i && h("span", { class: "rec" }, "おすすめ")))))),
     h("div", { class: "ask-foot" },
-      h("button", { class: "btn primary", type: "button", onclick: async () => {
-        const t = text(); fallback.value = t;
-        try { await navigator.clipboard.writeText(t); fallback.hidden = true; msg.textContent = "コピーしました。入力欄に貼り付けてください。"; }
-        catch { fallback.hidden = false; fallback.select(); msg.textContent = "コピーできませんでした。下の文字を選んでコピーしてください。"; }
-      } }, "答えをコピー"), msg),
+      h("button", { class: "btn primary", type: "button", onclick: () => copyText(text(), msg, fallback, "コピーしました。入力欄に貼り付けてください。") }, "答えをコピー"), msg),
     fallback);
 }
 
@@ -2573,7 +2693,34 @@ async function choose(id) {
 function render() {
   if (!latest) return;
   renderSignal(); renderFlow(); renderPast(); renderNow(); renderNext();
+  saveHash();
 }
+
+// The chosen run (and in live mode the project) lives in the URL, so a reload or a shared link opens the same place.
+const hashArgs = () => new URLSearchParams(location.hash.slice(1));
+let wantRun = hashArgs().get("run");   // read once at start, used by the first load
+function saveHash() {
+  const p = new URLSearchParams();
+  if (liveInfo) p.set("p", liveInfo.path);
+  if (sel != null && String(sel) !== String(latestId())) p.set("run", sel);
+  const want = p.toString() ? `#${p}` : "";
+  if (location.hash !== want) try { history.replaceState(null, "", want || location.pathname + location.search); } catch {}
+}
+addEventListener("hashchange", () => {
+  const id = hashArgs().get("run");
+  if (id == null) { if (sel != null) choose(null); return; }
+  if (String(id) !== String(sel) && nodes().some(n => String(n.id) === id)) choose(id);
+});
+
+// ← → move between runs: inside the dialog its runs, otherwise the history
+addEventListener("keydown", e => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.isComposing || e.defaultPrevented) return;
+  if (e.target.closest?.("input, textarea, select, [contenteditable], [role=tab]")) return;
+  const dlg = document.getElementById("dlg");
+  const b = (dlg.open ? dlg : document.getElementById("flow")).querySelector(`[data-step="${e.key === "ArrowLeft" ? -1 : 1}"]`);
+  if (b && !b.disabled) { e.preventDefault(); b.click(); }
+});
 
 async function loadAll(keep) {
   const [st, ov] = await Promise.all([src.status(), src.overview()]);
@@ -2581,6 +2728,7 @@ async function loadAll(keep) {
   if (!sameRun) for (const k in answers) delete answers[k];
   latest = st; runs = prepRuns(ov || []);
   if (!keep || (sel != null && !runs.some(r => String(r.id) === String(sel)))) sel = null;
+  if (wantRun != null) { if (runs.some(r => String(r.id) === wantRun)) sel = wantRun === String(latestId()) ? null : wantRun; wantRun = null; }
   document.getElementById("proj").textContent = st.project?.name || "";
   prevAsks = null;
   const last = runs[runs.length - 1];
@@ -2634,7 +2782,7 @@ async function startLive() {
   if (!projects.length) throw new Error("記録された実行がまだありません。rb done などで 1 件記録してください。");
   const selEl = document.getElementById("proj-select");
   selEl.replaceChildren(...projects.map(p => h("option", { value: p.project_path }, projectLabel(p))));
-  const saved = local.get("rb.project");
+  const saved = hashArgs().get("p") || local.get("rb.project");
   selEl.value = projects.some(p => p.project_path === saved) ? saved : projects[0].project_path;
   selEl.hidden = false;
   document.getElementById("live-tag").hidden = false;

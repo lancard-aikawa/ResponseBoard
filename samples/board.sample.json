@@ -120,6 +120,12 @@
     "detail": "GitHub Pages に置く。終わりの条件: 公開の URL で開ける。"
    }
   ],
+  "git": {
+   "run": "2026-10-18T16:00",
+   "files": 1,
+   "add": 4,
+   "del": 0
+  },
   "history": [
    {
     "finished_at": "2026-10-18T10:05:00+09:00",

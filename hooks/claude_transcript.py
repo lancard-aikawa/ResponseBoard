@@ -47,13 +47,19 @@ def _tool_line(name: str, args: dict) -> str:
     return name
 
 
-def turn_talk(transcript: str | Path, since: float, root: Path | None = None) -> list[dict]:
-    """The talk of the turn that started at `since` (epoch seconds; 2 s of slack for clock skew)."""
-    items: list[dict] = []
+def turn_talk(transcript: str | Path, since: float, root: Path | None = None, until: float | None = None) -> list[dict]:
+    """The talk of the turn that started at `since` and, if given, ended at `until`
+    (epoch seconds; 2 s of slack for clock skew)."""
     try:
         lines = Path(transcript).read_text(encoding="utf-8").splitlines()
     except OSError:
-        return items
+        return []
+    return [it for t, it in read_items(lines, root) if t >= since - 2 and (until is None or t <= until + 2)]
+
+
+def read_items(lines: list[str], root: Path | None = None) -> list[tuple[float, dict]]:
+    """Every talk item of a transcript with its time (epoch seconds), oldest first."""
+    items: list[tuple[float, dict]] = []
     for line in lines:
         try:
             d = json.loads(line)
@@ -64,7 +70,7 @@ def turn_talk(transcript: str | Path, since: float, root: Path | None = None) ->
             continue
         at = d.get("timestamp")
         t = _epoch(at)
-        if t is None or t < since - 2:
+        if t is None:
             continue
         content = (d.get("message") or {}).get("content")
         if kind == "user":
@@ -72,18 +78,18 @@ def turn_talk(transcript: str | Path, since: float, root: Path | None = None) ->
                 continue
             text = REMINDER.sub("", "\n".join(_texts(content))).strip()
             if text:
-                items.append({"role": "user", "text": text, "at": at})
+                items.append((t, {"role": "user", "text": text, "at": at}))
             continue
         for b in content if isinstance(content, list) else []:
             if not isinstance(b, dict):
                 continue
             if b.get("type") == "text" and b.get("text", "").strip():
-                items.append({"role": "assistant", "text": b["text"], "at": at})
+                items.append((t, {"role": "assistant", "text": b["text"], "at": at}))
             elif b.get("type") == "tool_use":
                 name, args = b.get("name", "?"), b.get("input") or {}
                 if name in EDIT_TOOLS:
                     target = args.get("file_path") or args.get("notebook_path") or "?"
-                    items.append({"role": "edit", "text": _rel(target, root), "at": at})
+                    items.append((t, {"role": "edit", "text": _rel(target, root), "at": at}))
                 else:
-                    items.append({"role": "tool", "text": _tool_line(name, args), "at": at})
+                    items.append((t, {"role": "tool", "text": _tool_line(name, args), "at": at}))
     return items

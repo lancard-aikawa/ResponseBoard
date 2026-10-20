@@ -175,6 +175,18 @@
       }
     },
 
+    "git": {
+      "type": "object",
+      "description": "What this run changed in git (files and lines), for the status line. Filled by rb; do not write it by hand.",
+      "additionalProperties": false,
+      "properties": {
+        "run": { "type": "string", "description": "run.id of the run these numbers belong to." },
+        "files": { "type": "integer", "minimum": 0 },
+        "add": { "type": "integer", "minimum": 0 },
+        "del": { "type": "integer", "minimum": 0 }
+      }
+    },
+
     "left_behind": {
       "type": "array",
       "description": "not_done items of this project that have neither task nor drop yet, newest last. Filled by rb; do not write it by hand. Pick one up by writing it again in run.not_done with the same title and a task or drop.",

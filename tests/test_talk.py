@@ -1,4 +1,6 @@
 """The conversation of a run: reading a Claude Code transcript, saving it through the Stop hook, and /api/talk."""
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -124,6 +126,70 @@ class HookTalkTest(unittest.TestCase):
                 os.environ.pop("RESPONSEBOARD_DB")
             else:
                 os.environ["RESPONSEBOARD_DB"] = old
+
+
+class BackfillTest(unittest.TestCase):
+    """hooks/claude_backfill.py: runs recorded without a talk get one from the transcripts, matched by time."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.old_db = os.environ.get("RESPONSEBOARD_DB")
+        os.environ["RESPONSEBOARD_DB"] = str(self.dir / "runs.db")
+
+    def tearDown(self):
+        if self.old_db is None:
+            os.environ.pop("RESPONSEBOARD_DB", None)
+        else:
+            os.environ["RESPONSEBOARD_DB"] = self.old_db
+        shutil.rmtree(self.dir)
+
+    def test_fills_only_runs_without_talk_by_their_window(self):
+        import claude_backfill
+        from responseboard import store
+        proj, now = "C:/x/proj", time.time()
+        folder = self.dir / "projects" / "C--x-proj"
+        folder.mkdir(parents=True)
+        say = lambda t, role, text: {"type": role, "timestamp": iso(now + t), "message": {"role": role, "content":
+            text if role == "user" else [{"type": "text", "text": text}]}}
+        rows = [say(-10000, "user", "古い話"), say(-900, "user", "一つ目の頼み"), say(-890, "assistant", "一つ目の答え"),
+                say(-500, "user", "二つ目の頼み"), say(-490, "assistant", "二つ目の答え"), say(-300, "user", "三つ目の頼み")]
+        (folder / "s.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows), encoding="utf-8")
+        con = store.connect()
+        try:
+            for i, (title, at) in enumerate([("一つ目", -800), ("二つ目", -400), ("三つ目", -200)]):
+                d = json.loads(json.dumps(SAMPLE))
+                d["project"] = {"name": "proj", "path": proj}
+                d["run"].update(title=title, finished_at=datetime.fromtimestamp(now + at).astimezone().isoformat())
+                store.insert(con, d)
+                con.execute("UPDATE runs SET recorded_at = ? WHERE run_key = ?",
+                            (datetime.fromtimestamp(now + at).astimezone().isoformat(timespec="seconds"), store.run_key(d)))
+                if i == 2:
+                    store.add_talk(con, store.run_key(d), [{"role": "user", "text": "もう入っている"}])
+            con.commit()
+            found = claude_backfill.plan(con, proj, claude_backfill.all_items(folder, Path(proj)), 6)
+        finally:
+            con.close()
+        self.assertEqual([x["title"] for x in found], ["一つ目", "二つ目"])
+        # the first run takes only its last turn, not the old talk before it
+        self.assertEqual([it["text"] for it in found[0]["talk"]], ["一つ目の頼み", "一つ目の答え"])
+        self.assertEqual([it["text"] for it in found[1]["talk"]], ["二つ目の頼み", "二つ目の答え"])
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            claude_backfill.main(["--project", proj, "--transcripts", str(self.dir / "projects")])
+        con = store.connect()
+        try:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM run_talk").fetchone()[0], 1, "without --apply nothing is saved")
+        finally:
+            con.close()
+        with contextlib.redirect_stdout(io.StringIO()):
+            claude_backfill.main(["--project", proj, "--apply", "--transcripts", str(self.dir / "projects")])
+        con = store.connect()
+        try:
+            talks = {r[0]: json.loads(r[1]) for r in con.execute("SELECT r.title, t.talk_json FROM run_talk t JOIN runs r ON r.id = t.run_id")}
+        finally:
+            con.close()
+        self.assertEqual(sorted(talks), ["一つ目", "三つ目", "二つ目"])
+        self.assertEqual(talks["三つ目"], [{"role": "user", "text": "もう入っている"}])  # left alone
 
 
 if __name__ == "__main__":

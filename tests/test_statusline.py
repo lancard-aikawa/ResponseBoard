@@ -61,6 +61,17 @@ class StatuslineTest(unittest.TestCase):
             json.dumps({"started_at": NOW.timestamp() - 180}), encoding="utf-8")
         self.assertEqual(self.text(), "◐ 作業中 3分 │ 前回: ● 完了 │ 前の作業 │ 10分前")
 
+    def test_git_lines_of_this_run(self):
+        self.write(self.run_at(5, status="done", title="直した", id="r1"))
+        f = self.dir / ".responseboard" / "status.json"
+        d = json.loads(f.read_text(encoding="utf-8"))
+        d["git"] = {"run": "r1", "files": 3, "add": 120, "del": 8}
+        f.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(self.text(), "● 完了 │ 直した │ +120 −8 │ 5分前")
+        d["git"]["run"] = "r0"  # carried over from the run before: not shown
+        f.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(self.text(), "● 完了 │ 直した │ 5分前")
+
     def test_claude_adapter_reads_project_dir_from_stdin(self):
         self.write(self.run_at(0, status="done", title="ok"), mtime=time.time())
         p = subprocess.run([sys.executable, str(ROOT / "hooks" / "rb_statusline.py")],

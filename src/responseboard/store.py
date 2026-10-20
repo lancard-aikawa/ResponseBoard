@@ -240,6 +240,7 @@ def record_file(root: Path, default_writer: str = "llm", talk: list | None = Non
     if errs:
         return errs, False
     d.pop("history", None)
+    d.pop("git", None)
     d["project"]["path"] = st.norm_path(d["project"].get("path") or root)
     d["source"].setdefault("written_by", default_writer)
     con = connect()
@@ -251,6 +252,9 @@ def record_file(root: Path, default_writer: str = "llm", talk: list | None = Non
             add_git(con, root, key)
             if talk:
                 add_talk(con, key, talk)
+        g = git_summary(con, key)
+        if g:
+            d["git"] = {"run": d["run"]["id"], **g}
         d["history"] = [
             {"finished_at": r["finished_at"], "status": r["status"], "title": r["title"], "tool": r["tool"]}
             for r in query(con, project_path=d["project"]["path"], limit=HISTORY_KEEP, exclude_key=key)
@@ -280,6 +284,15 @@ def add_git(con: sqlite3.Connection, root: Path, key: str) -> bool:
                  g["patch"], int(g["truncated"])))
     con.commit()
     return True
+
+
+def git_summary(con: sqlite3.Connection, key: str) -> dict | None:
+    """How many files and lines the run with this key changed in git, or None without git."""
+    r = con.execute("SELECT g.files_json FROM run_git g JOIN runs r ON r.id = g.run_id WHERE r.run_key = ?", (key,)).fetchone()
+    if not r:
+        return None
+    files = json.loads(r[0])
+    return {"files": len(files), "add": sum(f.get("add") or 0 for f in files), "del": sum(f.get("del") or 0 for f in files)}
 
 
 def add_talk(con: sqlite3.Connection, key: str, items: list) -> int:

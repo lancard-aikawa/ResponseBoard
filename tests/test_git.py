@@ -76,6 +76,9 @@ class GitTest(unittest.TestCase):
         self.assertEqual(run1["git"]["base_kind"], "head")
         self.assertEqual(sorted(f["path"] for f in run1["git"]["files"]), ["app/a.txt", "app/新規.txt"])
         self.assertNotIn(".responseboard", p1)
+        # status.json carries the counts for the status line, tied to this run
+        written = st.read_json(st.status_path(self.proj))
+        self.assertEqual(written["git"], {"run": written["run"]["id"], "files": 2, "add": 2, "del": 0})
 
         (self.proj / "a.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
         _, rid2 = self.record(status("2 回目", finished="2026-10-20T11:00:00+09:00"))
