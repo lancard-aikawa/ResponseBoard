@@ -1,14 +1,15 @@
 """The conversation of one run, in a shape that does not depend on any LLM.
 
 A talk is a list of items, oldest first:
-  {"role": "user" | "assistant" | "tool" | "edit", "text": str, "at": ISO 8601 (optional)}
-user and assistant are what was said. tool is one line per tool call (no output).
+  {"role": "user" | "assistant" | "tool" | "edit" | "notice", "text": str, "at": ISO 8601 (optional)}
+user and assistant are what was said. notice is something the tool itself put in the conversation
+(a background task finished, a command's output): it reads like the user but was not written by them. tool is one line per tool call (no output).
 edit is one line per file change, only the path: the change itself is in the git diff.
 Adapters (hooks/claude_transcript.py for Claude Code) build it; store.add_talk saves it.
 """
 from __future__ import annotations
 
-ROLES = ("user", "assistant", "tool", "edit")
+ROLES = ("user", "assistant", "tool", "edit", "notice")
 ITEM_MAX = 20000
 TOTAL_MAX = 200000
 

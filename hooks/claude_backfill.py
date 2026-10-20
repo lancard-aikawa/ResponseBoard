@@ -1,6 +1,7 @@
 """Fills in the conversation of runs recorded without one, from Claude Code transcripts.
 
   python hooks/claude_backfill.py [--project PATH] [--apply] [--max-hours 6] [--transcripts DIR]
+  python hooks/claude_backfill.py --retag [--project PATH] [--apply]
 
 Runs recorded before the Stop hook kept conversations (or by "rb done") have no talk. A run's
 turn is found by time: what was said after the run before it was recorded, up to when this run
@@ -9,10 +10,14 @@ The window is at most --max-hours long. A project's first run has no run before 
 the last turn (from the last thing the user said).
 
 Without --apply it only lists what it would add. Runs that already have a talk are left alone.
+
+--retag reads the user lines of talks already saved again, the way claude_transcript.py reads them now:
+background task notices become notice, the files VS Code adds are dropped, slash commands become "/name args".
 """
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -20,7 +25,7 @@ from pathlib import Path
 RB_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RB_ROOT / "src"))
 
-from claude_transcript import read_items  # noqa: E402
+from claude_transcript import read_items, user_item  # noqa: E402
 from responseboard import store  # noqa: E402
 
 
@@ -68,16 +73,48 @@ def plan(con, project_path: str, items: list[tuple[float, dict]], max_hours: flo
     return out
 
 
+def retag(items: list[dict]) -> list[dict]:
+    out = []
+    for it in items:
+        if it.get("role") == "user":
+            it = user_item(it["text"], it.get("at"))
+        if it:
+            out.append(it)
+    return out
+
+
+def retag_all(con, projects: list[str], apply: bool) -> int:
+    changed = 0
+    for p in projects:
+        for r in con.execute("SELECT r.id, r.run_key, r.title, t.talk_json FROM run_talk t JOIN runs r ON r.id = t.run_id"
+                             " WHERE r.project_path = ? ORDER BY r.id", (p,)).fetchall():
+            old = json.loads(r["talk_json"])
+            new = retag(old)
+            if new == old:
+                continue
+            changed += 1
+            notices = sum(1 for it in new if it["role"] == "notice")
+            print(f"{p} #{r['id']} {r['title']}  ({len(old)} -> {len(new)} items, {notices} notice)")
+            if apply:
+                store.add_talk(con, r["run_key"], new)
+    return changed
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--project", help="project path as recorded (default: every project)")
     ap.add_argument("--apply", action="store_true", help="save the talks (default: only list them)")
     ap.add_argument("--max-hours", type=float, default=6.0)
+    ap.add_argument("--retag", action="store_true", help="re-read the user lines of saved talks instead")
     ap.add_argument("--transcripts", type=Path, help="folder that holds the per-project transcript folders")
     a = ap.parse_args(argv)
     con = store.connect()
     try:
         projects = [a.project.replace("\\", "/")] if a.project else [r[0] for r in con.execute("SELECT DISTINCT project_path FROM runs")]
+        if a.retag:
+            n = retag_all(con, projects, a.apply)
+            print(f"{'re-saved' if a.apply else 'would re-save'} {n} talk(s)" + ("" if a.apply else "; add --apply to save"))
+            return 0
         added = 0
         for p in projects:
             folder = transcripts_dir(p, a.transcripts)

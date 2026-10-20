@@ -255,6 +255,11 @@ const btn = (scope, label) => [...scope.querySelectorAll("button")].find(b => b.
   clean("section map");
   await w.eval("src = bundleSource(JSON.parse(document.getElementById('sample').textContent)); loadAll(false)"); await tick();
 
+  // t24: a notice from the tool is not shown as the user's words
+  const nt = w.talkItem({ role: "notice", text: 'Background command "Run the tests" completed', at: "2026-10-21T01:00:00Z" });
+  ok(nt.classList.contains("notice") && !nt.classList.contains("user") && nt.textContent.includes("あなたの発言ではない") && nt.textContent.includes("Run the tests"),
+    "t24: a notice is its own line, saying it is not the user");
+
   // markdown edge cases, rendered with the page's own md()
   const mdHtml = t => { const div = d.createElement("div"); div.append(...w.md(t)); return div; };
   let m = mdHtml("## 題\n\n- a\n  - b\n- c\n\n1. x\n2. y\n\n```js\nconst a = '<b>';\n```\n\n[link](javascript:alert(1)) [ok](https://example.com) <img src=x onerror=alert(1)>");

@@ -67,6 +67,28 @@ class TranscriptTest(unittest.TestCase):
         finally:
             shutil.rmtree(d)
 
+    def test_the_tools_own_messages_are_not_the_user(self):
+        from claude_transcript import user_item
+        notice = ("<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n"
+                  "<summary>Background command \"Run the tests\" completed (exit code 0)</summary>\n</task-notification>")
+        self.assertEqual(user_item(notice, "t"), {"role": "notice", "text": 'Background command "Run the tests" completed (exit code 0)', "at": "t"})
+        self.assertEqual(user_item("<task-notification><status>stopped</status></task-notification>"),
+                         {"role": "notice", "text": "background task stopped"})
+        self.assertEqual(user_item("<ide_opened_file>The user opened a.py</ide_opened_file>ここを直して"), {"role": "user", "text": "ここを直して"})
+        self.assertIsNone(user_item("<ide_selection>x</ide_selection><system-reminder>r</system-reminder>"))
+        self.assertEqual(user_item("<command-message>loop</command-message>\n<command-name>/loop</command-name>\n<command-args>5m</command-args>"),
+                         {"role": "user", "text": "/loop 5m"})
+        self.assertEqual(user_item("<local-command-stdout>Set model to opus</local-command-stdout>"), {"role": "notice", "text": "Set model to opus"})
+        self.assertIsNone(user_item("<local-command-stdout></local-command-stdout>"))
+        self.assertIn("notice", talk.ROLES)
+
+    def test_retag_saved_talk(self):
+        import claude_backfill
+        old = [{"role": "user", "text": "<task-notification><summary>done</summary></task-notification>", "at": "t"},
+               {"role": "assistant", "text": "<task-notification> in prose stays"}, {"role": "user", "text": "ふつうの頼み"}]
+        self.assertEqual(claude_backfill.retag(old), [{"role": "notice", "text": "done", "at": "t"},
+                                                      old[1], {"role": "user", "text": "ふつうの頼み"}])
+
     def test_clean_drops_bad_items_and_caps(self):
         items, cut = talk.clean([{"role": "user", "text": " hi "}, {"role": "x", "text": "no"}, {"role": "tool"},
                                  {"role": "assistant", "text": "a" * (talk.ITEM_MAX + 5)}])

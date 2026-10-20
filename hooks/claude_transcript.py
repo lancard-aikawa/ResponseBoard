@@ -14,6 +14,34 @@ from pathlib import Path
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 TOOL_LINE = 200
 REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
+IDE = re.compile(r"<(ide_opened_file|ide_selection)>.*?</\1>", re.S)  # what VS Code adds before the user's words
+NOTICE_LINE = 200
+
+
+def _tag(text: str, name: str) -> str:
+    m = re.search(rf"<{name}>(.*?)</{name}>", text, re.S)
+    return " ".join(m.group(1).split()) if m else ""
+
+
+def user_item(text: str, at: str | None = None) -> dict | None:
+    """A user-side message as a talk item. Claude Code puts its own messages on the user side too:
+    background task notices and slash command output become notice; a slash command becomes "/name args"."""
+    text = IDE.sub("", REMINDER.sub("", text)).strip()
+    if not text:
+        return None
+    item = {"role": "user", "text": text}
+    if text.startswith("<task-notification>"):
+        item = {"role": "notice", "text": _tag(text, "summary") or f"background task {_tag(text, 'status')}".strip()}
+    elif text.startswith("<local-command-stdout>") or text.startswith("<local-command-stderr>"):
+        out = _tag(text, "local-command-stdout") or _tag(text, "local-command-stderr")
+        if not out:
+            return None
+        item = {"role": "notice", "text": out[:NOTICE_LINE] + (" …" if len(out) > NOTICE_LINE else "")}
+    elif "<command-name>" in text:
+        item["text"] = f"{_tag(text, 'command-name')} {_tag(text, 'command-args')}".strip()
+    if at:
+        item["at"] = at
+    return item
 
 
 def _epoch(ts: str | None) -> float | None:
@@ -76,9 +104,9 @@ def read_items(lines: list[str], root: Path | None = None) -> list[tuple[float, 
         if kind == "user":
             if isinstance(content, list) and any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
                 continue
-            text = REMINDER.sub("", "\n".join(_texts(content))).strip()
-            if text:
-                items.append((t, {"role": "user", "text": text, "at": at}))
+            item = user_item("\n".join(_texts(content)), at)
+            if item:
+                items.append((t, item))
             continue
         for b in content if isinstance(content, list) else []:
             if not isinstance(b, dict):

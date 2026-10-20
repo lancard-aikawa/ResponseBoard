@@ -259,6 +259,9 @@ pre.diff .mt { color: var(--muted); }
 .msg .say { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
 .msg.user { background: var(--accent-soft); justify-self: end; max-width: 92%; }
 .msg.assistant { background: var(--sunk); }
+/* the tool's own message (a background task finished): not the user's words, so no bubble; no frame either (dashed frames are buttons here) */
+.msg.notice { justify-self: center; max-width: 92%; padding: 2px 10px; font-size: 12.5px; color: var(--muted); text-align: center; }
+.msg.notice .who { display: inline; margin: 0 6px 0 0; }
 .msg .from-board { font-size: 11px; margin-left: 6px; padding: 0 6px; border-radius: 3px; background: var(--surface); color: var(--accent); }
 .msg .say.long { max-height: 18em; overflow-y: auto; }
 details.ops > summary { list-style: none; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; width: fit-content;
@@ -2379,6 +2382,7 @@ function talkView(t, n) {
 }
 function talkItem(g, n) {
   const who = { user: "あなた", assistant: "AI" };
+  if (g.role === "notice") return h("div", { class: "msg notice" }, h("span", { class: "who" }, "🔔 知らせ（あなたの発言ではない）", g.at && h("span", { class: "num" }, ` ${fmt(g.at)}`)), g.text);
   if (!g.ops) return h("div", { class: `msg ${g.role}` }, h("span", { class: "who" }, who[g.role], g.at && h("span", { class: "num" }, ` ${fmt(g.at)}`),
       g.role === "user" && fromBoard(g.text) && h("span", { class: "from-board", title: "ボードの「答えをコピー」で作った文" }, `${ICON.ask} 質問への答え（ボードから）`)),
     g.role === "assistant" ? h("div", { class: "md" }, md(g.text)) : h("div", { class: "say" }, g.text));
