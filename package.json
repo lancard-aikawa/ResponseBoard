@@ -1,6 +1,7 @@
 {
   "name": "responseboard",
   "private": true,
+  "license": "MIT",
   "scripts": { "test": "node tests/check_board.js" },
   "devDependencies": { "jsdom": "24.1.0" }
 }

@@ -246,3 +246,7 @@ rb で手で書いたか（`manual`）を残す。
   `[object ...]`・`false`・`undefined` の文字が出ないことを見る）。
   DOM の `append()` に配列を渡すと `[object HTMLDivElement]` という文字になるので、配列は `...` で展開して渡す
 - 見本とスキーマ: `uv run --no-project --with jsonschema python -c "..."`（Draft 2020-12）
+
+## ライセンス
+
+MIT（[LICENSE](LICENSE)）
