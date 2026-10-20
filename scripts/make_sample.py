@@ -55,7 +55,7 @@ RUNS = [
       "style.css": ".card { border: 1px solid #ccc; padding: 8px; }\n"},
      dict(finished_at="2026-10-18T10:40:00+09:00", status="done", title="今日の天気カードを足した",
           summary="気温を 1 枚のカードで出す。値はまだ仮。", changes=[("app.js", "modified"), ("style.css", "added")],
-          checks=[("カードが出る", "pass", "")], not_done=[("本物の天気", "第 2 段でつなぐ")],
+          checks=[("カードが出る", "pass", "")], not_done=[("本物の天気", "第 2 段でつなぐ", {"task": "t4"})],
           next=("週の予報の列", "t3"),
           section=(S1, [("骨組み", "done"), ("今日", "done"), ("週", "todo")]), cols={"t1": "done", "t2": "done", "t3": "doing"}), "今日のカード"),
     ({"app.js": "const app = document.getElementById('app');\nfunction today(t) {\n  return `<div class=card>${t.temp}°</div>`;\n}\nfunction week(days) {\n  return days.map(today).join('');\n}\napp.innerHTML = today({ temp: 21 }) + week([{ temp: 19 }, { temp: 23 }]);\n"},
@@ -68,14 +68,14 @@ RUNS = [
     ({"api.js": "export async function forecast(lat, lon) {\n  const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max`;\n  return (await fetch(u)).json();\n}\n"},
      dict(finished_at="2026-10-18T14:00:00+09:00", status="failed", title="天気 API をつなぐ途中で止まった",
           summary="fetch が CORS で失敗。file:// で開いていたのが原因らしい。", changes=[("api.js", "added")],
-          checks=[("東京の 7 日分", "fail", "CORS エラー")], not_done=[("画面への反映", "取れていないため")],
+          checks=[("東京の 7 日分", "fail", "CORS エラー")], not_done=[("画面への反映", "取れていないため", {"task": "t4"})],
           next=("手元のサーバで開き直す", "t4"),
           section=(S2, [("API", "doing"), ("失敗の表示", "todo")]), cols={"t1": "done", "t2": "done", "t3": "done", "t4": "doing"}), None),
     ({"app.js": "import { forecast } from './api.js';\nconst app = document.getElementById('app');\nfunction today(t) {\n  return `<div class=card>${t.temp}°</div>`;\n}\nconst d = await forecast(35.68, 139.69);\napp.innerHTML = d.daily.temperature_2m_max.map(temp => today({ temp })).join('');\n",
       "index.html": "<main id=app></main>\n<script type=module src=app.js></script>\n"},
      dict(finished_at="2026-10-18T14:30:00+09:00", status="done", title="天気 API から 7 日分を出した",
           summary="手元のサーバで開けば取れた。module に変えた。", changes=[("app.js", "modified"), ("index.html", "modified")],
-          checks=[("東京の 7 日分", "pass", "")], not_done=[("取れないときの表示", "次の実行で")],
+          checks=[("東京の 7 日分", "pass", "")], not_done=[("取れないときの表示", "次の実行で", {"task": "t5"})],
           next=("取れないときの表示", "t5"),
           section=(S2, [("API", "done"), ("失敗の表示", "todo")]), cols={"t1": "done", "t2": "done", "t3": "done", "t4": "done", "t5": "doing"}), "API をつないだ"),
     ({"app.js": "import { forecast } from './api.js';\nconst app = document.getElementById('app');\nfunction today(t) {\n  return `<div class=card>${t.temp}°</div>`;\n}\ntry {\n  const d = await forecast(35.68, 139.69);\n  app.innerHTML = d.daily.temperature_2m_max.map(temp => today({ temp })).join('');\n} catch {\n  app.textContent = '天気を取れませんでした';\n}\n"},
@@ -88,11 +88,36 @@ RUNS = [
      dict(finished_at="2026-10-18T16:00:00+09:00", status="needs_you", title="暗い画面に合わせた",
           summary="OS が暗い設定のときの色を足した。公開先を決めてほしい。", changes=[("style.css", "modified")],
           checks=[("暗い設定で開く", "pass", ""), ("明るい設定で開く", "pass", "")],
-          not_done=[("公開", "公開先が決まっていない"), ("アイコン", "今回の範囲の外")],
+          not_done=[("公開", "公開先が決まっていない", {"task": "t7"}), ("アイコン", "今回の範囲の外", {"drop": True})],
           asks=[("どこに公開しますか？", ["GitHub Pages", "Cloudflare Pages", "まだ公開しない"], 0)],
           next=("公開する", "t7"),
           section=(S3, [("暗い画面", "done"), ("公開", "todo")]), cols={"t1": "done", "t2": "done", "t3": "done", "t4": "done", "t5": "done", "t6": "review"}), None),
 ]
+
+
+# what the user asked in each run; the rest of the talk is built from the run itself
+ASKED = ["天気のウィジェットを作りたい。まず画面の骨組みだけ", "今日の天気をカードで出して", "週の予報も並べて",
+         "本物の天気を出したい。API をつないで", "手元のサーバで開いて、もう一度試して",
+         "取れないときにも何か出して", "暗い画面にも合わせて"]
+
+
+def talk_for(i: int, r: dict) -> list:
+    """A conversation like the Claude adapter would save: words, tool lines, and file paths only."""
+    at = r["finished_at"]
+    ops = [{"role": "tool", "text": "Read: index.html", "at": at}]
+    ops += [{"role": "edit", "text": p, "at": at} for p, _ in r["changes"]]
+    ops += [{"role": "tool", "text": f"Bash: {n}", "at": at} for n, _, _ in r["checks"]]
+    # the final answer is Markdown, as an AI would write it
+    mark = {"pass": "✅ 通った", "fail": "✕ 失敗", "skip": "− しなかった"}
+    reply = f"**{r['title']}**\n\n{r['summary']}\n\n| 確認 | 結果 |\n|---|---|\n"
+    reply += "".join(f"| {n} | {mark[res]}{('（' + d + '）') if d else ''} |\n" for n, res, d in r["checks"])
+    if r.get("not_done"):
+        reply += "\n残したこと:\n" + "".join(f"- {t}（{x[0]}）\n" for t, *x in r["not_done"])
+    reply += f"\n変えたファイル: " + "、".join(f"`{p}`" for p, _ in r["changes"])
+    reply += "".join(f"\n\n> {q}" for q, _, _ in r.get("asks", []))
+    return [{"role": "user", "text": ASKED[i], "at": at},
+            {"role": "assistant", "text": "やってみます。", "at": at}, *ops,
+            {"role": "assistant", "text": reply, "at": at}]
 
 
 def status_for(r: dict) -> dict:
@@ -101,7 +126,8 @@ def status_for(r: dict) -> dict:
            "asks": [{"id": f"q{i + 1}", "question": q, "options": o, "recommended": rec} for i, (q, o, rec) in enumerate(r.get("asks", []))],
            "checks": [{"name": n, "result": res, **({"detail": d} if d else {})} for n, res, d in r["checks"]],
            "changes": [{"path": p, "kind": k} for p, k in r["changes"]],
-           "not_done": [{"title": t, "reason": why} for t, why in r.get("not_done", [])],
+           # the 3rd item says where the rest went (task / drop); 見た目の調整 has none, so it is left behind
+           "not_done": [{"title": x[0], "reason": x[1], **(x[2] if len(x) > 2 else {})} for x in r.get("not_done", [])],
            "next": {"title": r["next"][0], "task": r["next"][1]}}
     sec_title, sec_steps = r["section"]
     return {"schema": st.SCHEMA_ID, "project": {"name": "お天気ウィジェット"},
@@ -124,11 +150,11 @@ def main() -> int:
         (proj / ".gitignore").write_text(".responseboard/\n", encoding="utf-8")
         git("add", "-A")
         git("commit", "-q", "-m", "start")
-        for files, r, commit in RUNS:
+        for i, (files, r, commit) in enumerate(RUNS):
             for name, text in files.items():
                 (proj / name).write_text(text, encoding="utf-8", newline="\n")
             st.write_json(st.status_path(proj), status_for(r))
-            errs, _ = store.record_file(proj)
+            errs, _ = store.record_file(proj, talk=talk_for(i, r))
             if errs:
                 raise SystemExit(errs)
             if commit:
@@ -140,7 +166,8 @@ def main() -> int:
             ov = store.overview(con, path)
             bundle = {"status": st.read_json(st.status_path(proj)), "overview": ov,
                       "runs": {str(o["id"]): store.get_run(con, path, o["id"]) for o in ov},
-                      "patches": {str(o["id"]): store.get_patch(con, path, o["id"]) for o in ov if "git" in o}}
+                      "patches": {str(o["id"]): store.get_patch(con, path, o["id"]) for o in ov if "git" in o},
+                      "talks": {str(o["id"]): store.get_talk(con, path, o["id"]) for o in ov if o.get("talk")}}
         finally:
             con.close()
     finally:
@@ -160,7 +187,8 @@ def main() -> int:
     if n != 1:
         raise SystemExit("sample script tag not found in board/responseboard.html")
     board.write_text(html, encoding="utf-8", newline="\n")
-    print(f"{len(bundle['overview'])} runs, {len(bundle['patches'])} with git -> samples/board.sample.json and the board")
+    print(f"{len(bundle['overview'])} runs, {len(bundle['patches'])} with git, {len(bundle['talks'])} with talk"
+          " -> samples/board.sample.json and the board")
     return 0
 
 

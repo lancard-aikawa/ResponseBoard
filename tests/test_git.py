@@ -121,8 +121,9 @@ class GitTest(unittest.TestCase):
         con.close()
         con = store.connect()
         try:
-            self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], 2)
+            self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], store.VERSION)
             self.assertEqual(con.execute("SELECT section_id FROM runs").fetchone()[0], "第 3 段")
+            self.assertEqual(con.execute("SELECT count(*) FROM run_talk").fetchone()[0], 0)
         finally:
             con.close()
 
@@ -139,6 +140,51 @@ class StatusTest(unittest.TestCase):
         self.assertEqual(st.validate(d), [])
         d["run"]["not_done"] = [{"reason": "no title"}]
         self.assertTrue(any("not_done" in e for e in st.validate(d)))
+
+    def test_not_done_destination_is_checked(self):
+        d = status("x")
+        d["run"]["not_done"] = [{"title": "a", "task": "t1"}, {"title": "b", "drop": True}]
+        self.assertEqual(st.validate(d), [])
+        d["run"]["not_done"] = [{"title": "a", "task": "t9"}]
+        self.assertTrue(any("is not an id in tasks" in e for e in st.validate(d)))
+        d["run"]["not_done"] = [{"title": "a", "task": "t1", "drop": True}]
+        self.assertTrue(any("both task and drop" in e for e in st.validate(d)))
+
+
+class LeftoversTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.old_db = os.environ.get("RESPONSEBOARD_DB")
+        os.environ["RESPONSEBOARD_DB"] = str(self.dir / "runs.db")
+        self.proj = self.dir / "app"
+        self.proj.mkdir()
+
+    def tearDown(self):
+        if self.old_db is None:
+            os.environ.pop("RESPONSEBOARD_DB", None)
+        else:
+            os.environ["RESPONSEBOARD_DB"] = self.old_db
+        shutil.rmtree(self.dir)
+
+    def record(self, title, finished, not_done):
+        d = status(title, finished=finished)
+        d["run"]["not_done"] = not_done
+        st.write_json(st.status_path(self.proj), d)
+        errs, _ = store.record_file(self.proj)
+        self.assertEqual(errs, [])
+        return st.read_json(st.status_path(self.proj))
+
+    def test_left_behind_until_picked_up_with_the_same_title(self):
+        out = self.record("one", "2026-10-20T10:00:00+09:00", [{"title": "見た目", "reason": "後で"}, {"title": "公開", "task": "t1"}])
+        self.assertEqual([x["title"] for x in out["left_behind"]], ["見た目"])
+        out = self.record("two", "2026-10-20T11:00:00+09:00", [{"title": "見た目", "drop": True}])
+        self.assertEqual(out["left_behind"], [])
+        con = store.connect()
+        try:
+            states = {x["title"]: x["state"] for x in store.leftovers(con, st.norm_path(self.proj))}
+        finally:
+            con.close()
+        self.assertEqual(states, {"見た目": "drop", "公開": "task"})
 
 
 if __name__ == "__main__":

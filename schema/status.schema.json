@@ -87,14 +87,16 @@
         },
         "not_done": {
           "type": "array",
-          "description": "What this run left undone on purpose or could not do, with why. Shown next to what was done.",
+          "description": "What this run left for later, could not do, or decided not to do, with why. Shown as \"left\" next to what was done, grouped by where each item went.",
           "items": {
             "type": "object",
             "required": ["title"],
             "additionalProperties": false,
             "properties": {
               "title": { "type": "string", "maxLength": 60 },
-              "reason": { "type": "string", "maxLength": 120 }
+              "reason": { "type": "string", "maxLength": 120 },
+              "task": { "type": "string", "description": "Where the rest went: the id of a task in tasks that holds it." },
+              "drop": { "type": "boolean", "description": "true when it was decided not to do it at all. With neither task nor drop the item is left behind." }
             }
           }
         },
@@ -168,6 +170,22 @@
           "status": { "$ref": "#/$defs/runStatus" },
           "title": { "type": "string" },
           "tool": { "type": "string" }
+        }
+      }
+    },
+
+    "left_behind": {
+      "type": "array",
+      "description": "not_done items of this project that have neither task nor drop yet, newest last. Filled by rb; do not write it by hand. Pick one up by writing it again in run.not_done with the same title and a task or drop.",
+      "items": {
+        "type": "object",
+        "required": ["title"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "reason": { "type": "string" },
+          "finished_at": { "type": "string", "format": "date-time" },
+          "section_id": { "type": "string" }
         }
       }
     }

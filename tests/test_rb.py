@@ -79,6 +79,30 @@ class RbTest(unittest.TestCase):
         self.assertIn("run.next needs a title", err)
         self.assertIn("tasks[0].detail", err)
 
+    def test_record_with_talk(self):
+        self.rb("running", "作業中")
+        d = self.status()
+        d["run"]["status"] = "done"
+        (self.proj / ".responseboard" / "status.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        (self.dir / "talk.json").write_text(json.dumps([{"role": "user", "text": "直して"},
+                                                         {"role": "assistant", "text": "直した"}]), encoding="utf-8")
+        self.assertIn("recorded", self.rb("record", "--talk", str(self.dir / "talk.json"))[0])
+        out, _ = self.rb("history", "--json")
+        rid = json.loads(out)[0]["id"]
+        os.environ["RESPONSEBOARD_DB"], old = self.env["RESPONSEBOARD_DB"], os.environ.get("RESPONSEBOARD_DB")
+        try:
+            sys.path.insert(0, str(ROOT / "src"))
+            from responseboard import store
+            con = store.connect()
+            try:
+                t = store.get_talk(con, str(self.proj.resolve()).replace("\\", "/"), rid)
+            finally:
+                con.close()
+        finally:
+            os.environ.pop("RESPONSEBOARD_DB") if old is None else os.environ.__setitem__("RESPONSEBOARD_DB", old)
+        self.assertEqual([i["text"] for i in t["items"]], ["直して", "直した"])
+        self.rb("record", "--talk", str(self.dir / "none.json"), code=1)
+
     def test_record_twice_adds_one_row(self):
         self.rb("done", "same")
         out, _ = self.rb("record")
@@ -96,6 +120,29 @@ class RbTest(unittest.TestCase):
         self.assertIn("does not exist", err)
         self.rb("done", "ok")
         self.rb("check")
+
+    def test_left_lists_items_without_a_destination(self):
+        self.rb("done", "first")
+        d = self.status()
+        d["run"]["not_done"] = [{"title": "見た目", "reason": "後で"}, {"title": "公開", "drop": True}]
+        p = self.proj / ".responseboard" / "status.json"
+        p.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        self.rb("record")
+        out, _ = self.rb("left")
+        self.assertIn("見た目 - 後で", out)
+        self.assertNotIn("公開", out)
+        out, _ = self.rb("left", "--all")
+        self.assertIn("公開 (dropped)", out)
+        self.assertEqual([x["title"] for x in self.status()["left_behind"]], ["見た目"])
+
+    def test_check_rejects_ask_options_that_are_not_strings(self):
+        self.rb("ask", "t", "--ask", "どれ？|A|B")
+        d = self.status()
+        d["run"]["asks"][0]["options"] = [{"label": "A"}, {"label": "B"}]
+        p = self.proj / ".responseboard" / "status.json"
+        p.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        _, err = self.rb("check", code=1)
+        self.assertIn("run.asks[0].options[0] must be a string", err)
 
     def test_history_filters_and_all_projects(self):
         other = self.dir / "other"

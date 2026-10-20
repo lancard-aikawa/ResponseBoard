@@ -3,7 +3,8 @@
 One database per user (default %USERPROFILE%/.responseboard/runs.db, or the
 RESPONSEBOARD_DB environment variable). Each run keeps its whole status.json in
 raw_json; the other columns are copies used for searching. When the project is in git,
-run_git keeps what that run changed (see gitsnap.py).
+run_git keeps what that run changed (see gitsnap.py), and run_talk its conversation
+(see talk.py), when an adapter passed one.
 """
 from __future__ import annotations
 
@@ -15,8 +16,10 @@ from pathlib import Path
 
 from . import gitsnap
 from . import status as st
+from . import talk as tk
 
 HISTORY_KEEP = 10
+LEFT_KEEP = 20  # status.json "left_behind": the newest items nobody has picked up
 
 SCHEMA_V1 = """
 CREATE TABLE runs (
@@ -59,6 +62,17 @@ CREATE TABLE run_git (
 );
 """
 
+# v3: the conversation of each run.
+SCHEMA_V3 = """
+CREATE TABLE run_talk (
+  run_id    INTEGER PRIMARY KEY REFERENCES runs (id),
+  items     INTEGER NOT NULL,
+  talk_json TEXT NOT NULL,
+  truncated INTEGER NOT NULL DEFAULT 0
+);
+"""
+VERSION = 3
+
 
 def _section_of(raw: str) -> tuple[str | None, str | None]:
     try:
@@ -80,7 +94,7 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA busy_timeout=5000")
-    if con.execute("PRAGMA user_version").fetchone()[0] < 2:
+    if con.execute("PRAGMA user_version").fetchone()[0] < VERSION:
         migrate(con)
     return con
 
@@ -92,14 +106,14 @@ def migrate(con: sqlite3.Connection) -> None:
     con.execute("BEGIN IMMEDIATE")
     try:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        for v, script in ((1, SCHEMA_V1), (2, SCHEMA_V2)):
+        for v, script in ((1, SCHEMA_V1), (2, SCHEMA_V2), (3, SCHEMA_V3)):
             if version < v:
                 for stmt in filter(str.strip, script.split(";")):
                     con.execute(stmt)
         if version < 2:
             for rid, raw in con.execute("SELECT id, raw_json FROM runs").fetchall():
                 con.execute("UPDATE runs SET section_id = ?, section_title = ? WHERE id = ?", (*_section_of(raw), rid))
-        con.execute("PRAGMA user_version=2")
+        con.execute(f"PRAGMA user_version={VERSION}")
         con.execute("COMMIT")
     except BaseException:
         con.execute("ROLLBACK")
@@ -146,8 +160,9 @@ def query(con: sqlite3.Connection, project_path: str | None = None, status: str 
     return rows[::-1]  # oldest first
 
 
-def record_file(root: Path, default_writer: str = "llm") -> tuple[list[str], bool]:
+def record_file(root: Path, default_writer: str = "llm", talk: list | None = None) -> tuple[list[str], bool]:
     """Check root/.responseboard/status.json, add it to the database and fill its history.
+    talk (see talk.py) is saved with the run when it is new.
 
     Returns (errors, inserted). Nothing is written when errors is not empty.
     """
@@ -170,10 +185,15 @@ def record_file(root: Path, default_writer: str = "llm") -> tuple[list[str], boo
         key = run_key(d)
         if inserted:
             add_git(con, root, key)
+            if talk:
+                add_talk(con, key, talk)
         d["history"] = [
             {"finished_at": r["finished_at"], "status": r["status"], "title": r["title"], "tool": r["tool"]}
             for r in query(con, project_path=d["project"]["path"], limit=HISTORY_KEEP, exclude_key=key)
         ]
+        left = [x for x in leftovers(con, d["project"]["path"]) if x["state"] == "left"]
+        d["left_behind"] = [{k: x[k] for k in ("title", "reason", "finished_at", "section_id") if x.get(k)}
+                            for x in left[-LEFT_KEEP:]]
     finally:
         con.close()
     st.write_json(path, d)
@@ -198,6 +218,47 @@ def add_git(con: sqlite3.Connection, root: Path, key: str) -> bool:
     return True
 
 
+def add_talk(con: sqlite3.Connection, key: str, items: list) -> int:
+    """Save the conversation of the run with this key. Returns how many items were kept."""
+    kept, truncated = tk.clean(items)
+    if not kept:
+        return 0
+    rid = con.execute("SELECT id FROM runs WHERE run_key = ?", (key,)).fetchone()[0]
+    con.execute("INSERT OR REPLACE INTO run_talk (run_id, items, talk_json, truncated) VALUES (?,?,?,?)",
+                (rid, len(kept), json.dumps(kept, ensure_ascii=False), int(truncated)))
+    con.commit()
+    return len(kept)
+
+
+def _dest(x: dict) -> str:
+    return "task" if x.get("task") else "drop" if x.get("drop") else "left"
+
+
+def leftovers(con: sqlite3.Connection, project_path: str) -> list[dict]:
+    """Every not_done item of a project, oldest first, with where it went (state task / drop / left).
+
+    The same title written again in a later run is the same item, and the later word wins: this is how
+    a left-behind item gets picked up (written again with task or drop).
+    """
+    rows = con.execute("SELECT id, finished_at, title, section_id, raw_json FROM runs WHERE project_path = ?"
+                       " ORDER BY finished_at, id", (project_path,)).fetchall()
+    by_title: dict[str, dict] = {}
+    for r in rows:
+        try:
+            nd = (json.loads(r["raw_json"]).get("run") or {}).get("not_done") or []
+        except ValueError:
+            continue
+        for x in nd:
+            if not isinstance(x, dict) or not x.get("title"):
+                continue
+            t = str(x["title"])
+            first = by_title.pop(t, {}).get("first_run", r["id"])
+            by_title[t] = {"title": t, "reason": x.get("reason"), "state": _dest(x), "task": x.get("task"),
+                           "run_id": r["id"], "first_run": first, "finished_at": r["finished_at"],
+                           "run_title": r["title"], "section_id": r["section_id"]}
+    return list(by_title.values())
+
+
 def _light(raw: str) -> dict:
     """The parts of a stored status.json that the history axis needs for cross-filtering."""
     try:
@@ -206,18 +267,23 @@ def _light(raw: str) -> dict:
         return {}
     run = d.get("run") or {}
     return {"tasks": {t["id"]: t.get("column") for t in d.get("tasks") or [] if isinstance(t, dict) and t.get("id")},
-            "next_task": (run.get("next") or {}).get("task"), "summary": run.get("summary")}
+            "next_task": (run.get("next") or {}).get("task"), "summary": run.get("summary"),
+            "not_done": [{k: x[k] for k in ("title", "reason", "task", "drop") if x.get(k)}
+                         for x in run.get("not_done") or [] if isinstance(x, dict) and x.get("title")]}
 
 
 def overview(con: sqlite3.Connection, project_path: str, limit: int = 500) -> list[dict]:
     """Runs of one project, newest first, with section, task columns and git totals for the board."""
     rows = con.execute(
         "SELECT r.id, r.finished_at, r.status, r.title, r.tool, r.written_by, r.asks_count, r.checks_failed,"
-        " r.section_id, r.section_title, r.raw_json, g.files_json FROM runs r LEFT JOIN run_git g ON g.run_id = r.id"
+        " r.section_id, r.section_title, r.raw_json, g.files_json, t.items AS talk FROM runs r"
+        " LEFT JOIN run_git g ON g.run_id = r.id LEFT JOIN run_talk t ON t.run_id = r.id"
         " WHERE r.project_path = ? ORDER BY r.finished_at DESC, r.id DESC LIMIT ?", (project_path, limit)).fetchall()
     out = []
     for r in rows:
-        item = {k: r[k] for k in r.keys() if k not in ("raw_json", "files_json")}
+        item = {k: r[k] for k in r.keys() if k not in ("raw_json", "files_json", "talk")}
+        if r["talk"]:
+            item["talk"] = r["talk"]
         item.update(_light(r["raw_json"]))
         if r["files_json"] is not None:
             files = json.loads(r["files_json"])
@@ -240,6 +306,12 @@ def get_run(con: sqlite3.Connection, project_path: str, rid: int) -> dict | None
                "files": json.loads(g["files_json"]), "commits": json.loads(g["commits_json"]),
                "truncated": bool(g["truncated"])}
     return {"id": rid, "status": json.loads(r["raw_json"]), "git": git}
+
+
+def get_talk(con: sqlite3.Connection, project_path: str, rid: int) -> dict | None:
+    r = con.execute("SELECT t.talk_json, t.truncated FROM run_talk t JOIN runs r ON r.id = t.run_id"
+                    " WHERE r.id = ? AND r.project_path = ?", (rid, project_path)).fetchone()
+    return {"items": json.loads(r[0]), "truncated": bool(r[1])} if r else None
 
 
 def get_patch(con: sqlite3.Connection, project_path: str, rid: int) -> str | None:

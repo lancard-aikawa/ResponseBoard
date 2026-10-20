@@ -14,6 +14,7 @@ WRITERS = {"llm", "hook", "extractor", "manual"}
 TITLE_MAX = 40
 SUMMARY_MAX = 120
 DETAIL_MAX = 400   # run.next.detail and tasks[].detail
+ASK_OPTION_MAX = 40  # run.asks[].options[]
 NOT_DONE_MAX = 60  # run.not_done[].title
 
 
@@ -93,13 +94,26 @@ def validate(d) -> list[str]:
         opts = a.get("options") or []
         if not a.get("id") or not a.get("question") or not 2 <= len(opts) <= 4:
             errs.append(f"run.asks[{i}] needs id, question and 2-4 options")
+        # the board prints each option as text, so an object shows up as [object Object]
+        for j, o in enumerate(opts if isinstance(opts, list) else []):
+            if not isinstance(o, str) or not o.strip() or len(o) > ASK_OPTION_MAX:
+                errs.append(f"run.asks[{i}].options[{j}] must be a string of up to {ASK_OPTION_MAX} chars")
     nd = run.get("not_done") or []
     if not isinstance(nd, list):
         errs.append("run.not_done must be a list")
         nd = []
+    task_ids = {t.get("id") for t in d.get("tasks") or [] if isinstance(t, dict)}
     for i, x in enumerate(nd):
         if not isinstance(x, dict) or not x.get("title") or len(str(x["title"])) > NOT_DONE_MAX:
             errs.append(f"run.not_done[{i}] needs a title of up to {NOT_DONE_MAX} chars")
+            continue
+        # where the rest went: a task that holds it, or dropped on purpose; neither = left behind
+        if x.get("task") is not None and x.get("drop"):
+            errs.append(f"run.not_done[{i}] has both task and drop; pick one")
+        if x.get("task") is not None and x["task"] not in task_ids:
+            errs.append(f'run.not_done[{i}].task "{x["task"]}" is not an id in tasks')
+        if x.get("drop") is not None and not isinstance(x["drop"], bool):
+            errs.append(f"run.not_done[{i}].drop must be true or false")
     nxt = run.get("next")
     if nxt is not None:
         if not isinstance(nxt, dict) or not nxt.get("title"):

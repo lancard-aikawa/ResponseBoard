@@ -12,9 +12,11 @@ LLM / 人 / スクリプト ─→ .responseboard/status.json ─→ rb（形の
 
 | 場所 | 中身 |
 |---|---|
-| `src/responseboard/` | 本体（標準ライブラリだけ）。`status.py` 形のチェック、`store.py` SQLite、`gitsnap.py` git の差分、`cli.py` rb コマンド |
+| `src/responseboard/` | 本体（標準ライブラリだけ）。`status.py` 形のチェック、`store.py` SQLite、`gitsnap.py` git の差分、`ignore.py` 外す一覧、`cli.py` rb コマンド |
 | `scripts/rb.cmd` | rb コマンドの起動役 |
-| `hooks/rb_hook.py` | Claude Code のつなぎ役（UserPromptSubmit / Stop フック）。中身は本体を呼ぶだけ |
+| `hooks/rb_hook.py` | Claude Code のつなぎ役（SessionStart / UserPromptSubmit / Stop フック）。中身は本体を呼ぶだけ |
+| `hooks/install_claude.py` | Claude Code に入れる・外す（全体か個別か） |
+| `hooks/claude_rules.py` | Claude に渡す決まりの文（CLAUDE.md の節と SessionStart で同じ文） |
 | `schema/status.schema.json` | 1 回の実行結果の形（`responseboard/status@1`） |
 | `samples/status.sample.json` | 見本のデータ |
 | `board/responseboard.html` | ボード（見本データを中に埋め込んである） |
@@ -23,38 +25,76 @@ LLM / 人 / スクリプト ─→ .responseboard/status.json ─→ rb（形の
 ## rb コマンド
 
 ```powershell
-C:\Repos\claude\ResponseBoard\scripts\rb.cmd done "ビルド成功" --summary "テスト 12 件通過"
+<取得したフォルダ>\scripts\rb.cmd done "ビルド成功" --summary "テスト 12 件通過"
 rb fail "デプロイ失敗"
 rb ask "公開の確認" --ask "公開しますか？|*はい|いいえ"    # * はおすすめの選択肢
 rb running "変換中"                                        # 実行中。終わるまで記録しない
-rb record                                                  # LLM が書いた status.json を記録する
+rb record [--talk 会話.json]                               # LLM が書いた status.json を記録する
 rb check                                                   # 形だけ確かめる
 rb history                      # このフォルダの履歴
 rb history --all --status failed --limit 50                # 全プロジェクトの失敗
 rb history --json
+rb left [--all] [--json]                                   # 置き去り（行き先の無い「残したこと」）
 rb import-jsonl <古い history.jsonl>
 rb serve [--open]                                          # 手元のボード http://127.0.0.1:28000/
 rb statusline [--no-color]                                 # ステータスライン用の 1 行
+rb ignore [--remove | --list]                              # 外す一覧にこのフォルダを足す・外す
 ```
 
 どれも今いるフォルダ（`--dir` で変えられる）の `.responseboard/status.json` を扱う。
 `done` / `fail` / `ask` は、前の `status.json` の `section` と `tasks`（カンバン）を引き継ぐ。
 
-## 他のプロジェクトに入れる（Claude Code）
+## 入れる（Claude Code）
 
-```powershell
-python C:\Repos\claude\ResponseBoard\hooks\install_claude.py <プロジェクトのフォルダ> [--name 表示名]
+```
+git clone https://github.com/lancard-aikawa/ResponseBoard.git
 ```
 
-本体はコピーせず、このフォルダを絶対パスで呼ぶ。何度実行しても同じ結果になる（済んでいる所は飛ばす）。
+リポジトリを取得し、取得したフォルダは動かさない（フックはこのフォルダを絶対パスで呼ぶ）。要るのは PATH の通った
+Python 3.11 以上だけ。あとは Claude Code に次のように頼めば、Claude が入れ方を聞いてから実行する。
 
-1. `.claude/settings.local.json` に UserPromptSubmit / Stop フックと statusLine を足す（この PC 用なので local。
-   すでに別の statusLine があればそのまま残す）
+> `<取得したフォルダ>/README.md` の「入れる」を読んで ResponseBoard を入れて。全体か個別かは私に聞いて。
+
+入れ方は 2 つ。どちらも何度実行しても同じ結果になる（済んでいる所は飛ばす）。
+
+| 入れ方 | コマンド | 動く所 |
+|---|---|---|
+| 全体 | `python <取得したフォルダ>/hooks/install_claude.py --scope user` | どのフォルダでも。外す一覧（下）に書いたフォルダだけ動かない |
+| 個別 | `python <取得したフォルダ>/hooks/install_claude.py --scope project <フォルダ> [--name 表示名]` | そのプロジェクトだけ |
+
+外すときは同じコマンドに `--uninstall` を付ける。履歴のデータベースと各フォルダの `.responseboard/` は残る。
+
+**全体**（`~/.claude/settings.json`。`CLAUDE_CONFIG_DIR` があればその中）:
+
+1. SessionStart / UserPromptSubmit / Stop フックと statusLine を、今の設定に混ぜて足す（別の statusLine があれば残す）
+2. 決まり（status.json の書き方）は、セッションの始めに SessionStart フックが Claude に渡す。各フォルダの CLAUDE.md は書き換えない
+3. 外す一覧 `%USERPROFILE%\.responseboard\ignore` を作る
+4. 初めて動いたフォルダに `.responseboard/` を作り、その中に `*` だけの `.gitignore` を置く（プロジェクトの `.gitignore` は触らない）
+5. 個別に入れたプロジェクト（`.claude/settings*.json` に rb_hook.py がある）では、全体のフックは何もしない。二重には動かない
+
+**個別**（そのプロジェクトの `.claude/settings.local.json`。この PC 用なので local）:
+
+1. UserPromptSubmit / Stop フックと statusLine を足す（別の statusLine があれば残す）
 2. `CLAUDE.md` に `<!-- responseboard:start -->` 〜 `end` の節を足す（無ければ作る）
 3. `.gitignore` があれば `.responseboard/` を足す
 4. 最初の 1 件を記録して、ボードのプロジェクト一覧に出す
 
-外すときは、1 のフックと statusLine、2 の節、`.responseboard/` を消す。
+### 外す一覧（ignore）
+
+`%USERPROFILE%\.responseboard\ignore`（履歴のデータベースと同じフォルダ）に、ResponseBoard を動かさないフォルダを
+1 行に 1 つ書く。そのフォルダの下も全部外れる。全体・個別のどちらで入れたフックにも効き、ステータスラインも出なくなる。
+
+```text
+# コメント
+C:/Users/me/Downloads
+~/scratch/*          # * と ? が使える。~ はホームフォルダ。Windows では大文字と小文字を区別しない
+```
+
+```powershell
+rb ignore            # 今のフォルダを足す
+rb ignore --remove   # 外す（* で外れているときは、その行を書き直すよう言う）
+rb ignore --list
+```
 
 ## 履歴のデータベース
 
@@ -65,7 +105,38 @@ python C:\Repos\claude\ResponseBoard\hooks\install_claude.py <プロジェクト
 - WAL モードと 5 秒の待ち時間で、複数のセッションが同時に書いても壊れない
 - `status.json` の `history` は、記録のたびにこの表から同じプロジェクトの直近 10 件で埋める
 - 各行に `section_id`（セクションの id）を持つ。履歴はセクションごとにまとめて見る
-- 古い形（user_version 1）のデータベースは、開いたときに 2 へ作り直す（同時に開いても 1 回だけ）
+- 古い形のデータベースは、開いたときに今の形（user_version 3）へ作り直す（同時に開いても 1 回だけ）
+
+## 会話
+
+各回の会話を表 `run_talk` に残し、ボードの「過去」の「💬 会話」で読む（ふだんは畳んである）。
+
+- 残すのは、ユーザーが書いたこと・AI が書いたこと・道具を使った 1 行（`Bash: テストを動かす` など）・編集したファイルの場所
+- 残さないのは、考えている途中の文・道具の出力・**編集の中身**（「± 差分」の方が正確なので）・system-reminder・サブエージェント
+- 「過去」の「💬 会話を読む」で、幅の広いダイアログに開く（スマホでは画面いっぱい）。「◀ 前の回」「次の回 ▶」で
+  会話のある回をたどると、後ろのボードも同じ回に移る。Esc で閉じる
+- 続けて使った道具と編集は「⚙ 操作 5 ・ ✎ 編集 2」の 1 行に畳む
+- AI の返事は Markdown として描く（見出し・箇条書きの入れ子・表・コード・引用・リンク）。HTML は使わず DOM で組み立てるので、
+  返事の中の `<script>` などはそのまま文字で出る。リンクは http(s) だけ
+- Claude Code では Stop フックが記録ファイル（`transcript_path`）から今回の分を読む（`hooks/claude_transcript.py`）。
+  ほかの LLM や手作業は `rb record --talk <JSON>`（`[{"role": "user", "text": "…"}, …]`。形は `src/responseboard/talk.py`）
+- 1 件 2 万字、1 回 20 万字で切る。会話はこの PC の runs.db の中だけに置く
+
+## やり残し（残したことの行き先）
+
+`run.not_done`（ボードでは「残したこと」）の各項目に行き先を付ける。「しなかった」とまとめると、続きに回すものまで「もうやらない」と決まったように見えるので、行き先で分けて出す。次の回に必ず続きが来るとは限らないので、「次にやる事」だけに頼らない。
+
+| 行き先 | 書き方 | 意味 |
+|---|---|---|
+| タスク | `"task": "t13"` | 続きをやる。`tasks` に未着手のタスクを置いて、その id を書く |
+| やらないと決めた（見送り） | `"drop": true` | やらないと決めた（ユーザーが「やらない」と言ったものも）。理由は `reason` に |
+| 置き去り | どちらも無い | 行き先が決まっていない。ボードで ⚠ と目立たせる |
+
+- 一部だけやったときは、タスクを分けて、やった方を完了、残りを未着手に置く。`run.next` はそのタスクを指すだけにする
+- 置き去りは、後の回で**同じ題のまま** `not_done` に書き直して `task` か `drop` を付けると拾える（後の言葉が勝つ）
+- rb は記録のたびに `status.json` の `left_behind` に置き去りを埋める（新しい 20 件）。次の回の LLM にも見える。`rb left` でも見られる
+- セクションの「したこと・残したこと」は別に持たない。そのセクションの回の記録を集めて、現在のカードの「🧾 この範囲の記録」に出す
+  （置き去り・タスクにした・見送り・した回。選んだ回の時点まで）
 
 ## git の差分
 
@@ -91,6 +162,7 @@ python C:\Repos\claude\ResponseBoard\hooks\install_claude.py <プロジェクト
 | `/api/overview?path=` | 履歴（新しい順）。セクション・各タスクの列・git の行数つき |
 | `/api/run?path=&id=` | その回の `status.json`（記録した時のまま）と git の変更 |
 | `/api/diff?path=&id=` | その回の差分（文字） |
+| `/api/talk?path=&id=` | その回の会話 `{items, truncated}` |
 
 ## ステータスライン
 
@@ -112,16 +184,34 @@ Claude Code では `.claude/settings.json` の `statusLine` から `hooks/rb_sta
   第 1 段 ●─●─▲
   第 2 段 ✕─●─●
   第 3 段 ▲
-過去（したこと・しなかったこと） │ 現在（取り組み範囲・プロジェクト全体） │ 未来（次にやること・質問）
+過去（したこと・残したこと） │ 現在（取り組み範囲・プロジェクト全体） │ 未来（次にやること・質問）
 ```
 
 - **履歴は別の軸**。丸を選ぶと、過去・現在・未来の 3 枚がその時点の中身に変わる（現在＝その時点の段取りとカンバン、
   未来＝その時点の予定と「実際にこのあとしたこと」）
 - **絞り込みは双方向**（クロスフィルター）。セクションを押すと、そのセクションの実行だけが明るく残り、カンバンもそのセクションに絞る。
   カンバンのカードの「履歴で見る」を押すと、そのタスクを動かした実行（列が変わった・次にやることに指した）だけが明るく残る
-- 3 枚とも、ふだんは 1 行の要約と札だけ。中身（変えたファイル・確認・動いたタスク・しなかったこと・差分・説明・段取り・カンバン・手順）は折り畳む。
-  開いた欄は描き直しても開いたまま。質問だけは、答えが要るので最新のときは開いて出す
-- 差分は「± 差分」を開いたときに読み、ファイルごとにさらに畳む
+- 3 枚とも、ふだんは 1 行の要約と札だけ。短い中身（変えたファイル・確認・動いたタスク・残したこと・説明・段取り・手順）は折り畳む。
+  開いた欄は描き直しても開いたまま。質問だけは、答えが要るので最新のときは開いて出す。説明は Markdown で描く
+- 広さの要るもの（会話・差分・カンバン）は、幅の広いダイアログで開く（スマホでは画面いっぱい）。
+  「◀ 前の回」「次の回 ▶」でその中身のある回をたどると、後ろのボードも同じ回に移る。Esc で閉じる
+  - 会話と差分は 1 つのダイアログのタブ（💬 会話 ｜ ± 差分）。会話の中の「✎ ファイル → ±」を押すと、差分のそのファイルへ移る
+    （プロジェクトの外のファイルと、Bash で書き換えたファイルは出ない。差分にはどちらも入る）
+  - 差分は全部で 600 行までならファイルを全部開いて出し、それより長いとファイルごとに畳む（「すべて開く」「すべて畳む」）。
+    git で何も変わらなかった回にはボタンを出さない
+  - カンバンは 4 列（作業中・確認待ち・未着手・完了）で、その回の時点のタスク。「履歴で見る」を押すとダイアログを閉じて履歴を光らせる
+
+### ボタンの形
+
+押せるものは 5 種類。形で見分けられるようにする（色だけに頼らない）。
+
+| 種類 | 形 | 例 |
+|---|---|---|
+| 開閉 | 枠つき、先頭に ▸ / ▾ | したこと、残したこと、説明、段取り |
+| ダイアログを開く | 枠つき、末尾に ⤢、件数は灰色の丸札 | 💬 会話を読む ⑥ ⤢、± 差分を見る、▦ カンバン |
+| 絞り込み（入／切） | 角の丸い枠。入っている間は塗る | 履歴をこの範囲で絞る、履歴で見る、セクション: … ✕ |
+| 移動 | ◀ か ▶ が付く | ◀ 前の回、次の回 ▶、そこへ ▶、最新に戻る ⏭ |
+| 実行 | 塗り（主役）は 2 つだけ | 答えをコピー、最新に戻る |
 
 ### 絵文字と記号の使い方
 
@@ -131,7 +221,10 @@ Claude Code では `.claude/settings.json` の `statusLine` から `hooks/rb_sta
 |---|---|---|
 | ● ▲ ✕ ◐ | 完了・あなたの番・失敗・実行中 | 信号、履歴の丸、札。形が違うので色が見分けにくくても読める |
 | 🕘 📍 🧭 | 過去・現在・未来 | 3 枚の見出し。大きな区切りだけに使い、目印にする |
-| ✅ ⊘ ± 📝 ⇄ | したこと・しなかったこと・差分・説明・動いたタスク | 折り畳みの見出し |
+| ✅ ↪ ± 📝 ⇄ 💬 ▦ | したこと・残したこと・差分・説明・動いたタスク・会話・カンバン | 折り畳みとダイアログの見出し |
+| ⤢ | ダイアログで開く | ボタンの末尾 |
+| → ▦ ⊘ ⚠ 🧾 | 続きはタスクへ・やらないと決めた・置き去り・この範囲の記録 | 残したことの行き先。⊘ は「やらないと決めた」だけに使う。置き去りだけ橙で太く |
+| ⚙ ✎ | 道具を使った・ファイルを編集した | 会話の中の畳んだ 1 行。点線の枠で押せると分かる |
 | ● ◐ ○ ✕ | 段取りの 完了・作業中・未着手・止まっている | 段取りの欄 |
 | +12 −3 | 足した行・消した行（緑・赤） | 差分 |
 
@@ -148,7 +241,7 @@ rb で手で書いたか（`manual`）を残す。
 
 ## 確かめ方
 
-- 本体・フック・配信: `python -m unittest tests.test_hook tests.test_rb tests.test_server tests.test_statusline tests.test_install tests.test_git -v`
+- 本体・フック・配信: `python -m unittest tests.test_hook tests.test_rb tests.test_server tests.test_statusline tests.test_install tests.test_git tests.test_scope tests.test_talk -v`
 - ボード: `npm install` のあと `npm test`（jsdom で見本を描き、時点の切り替え・差分・絞り込み・答えのコピーと、
   `[object ...]`・`false`・`undefined` の文字が出ないことを見る）。
   DOM の `append()` に配列を渡すと `[object HTMLDivElement]` という文字になるので、配列は `...` で展開して渡す

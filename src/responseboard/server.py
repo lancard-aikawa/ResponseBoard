@@ -10,6 +10,7 @@ the history database, so the server cannot be used to read other files.
   GET /api/overview?path=P   runs newest first, with section, task columns and git totals (the history axis)
   GET /api/run?path=P&id=N   one run's status.json as recorded, and its git change
   GET /api/diff?path=P&id=N  that run's git patch (text)
+  GET /api/talk?path=P&id=N  that run's conversation {items, truncated}
   GET /api/rev?path=P        a short string that changes when the project's data changes
 """
 from __future__ import annotations
@@ -108,7 +109,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json([{k: r[k] for k in r.keys() if k != "raw_json"} for r in rows][::-1])
             if url.path == "/api/overview":
                 return self.json(store.overview(con, path, limit=min(int(q.get("limit") or 500), 2000)))
-            if url.path in ("/api/run", "/api/diff"):
+            if url.path in ("/api/run", "/api/diff", "/api/talk"):
                 try:
                     rid = int(q.get("id", ""))
                 except ValueError:
@@ -116,6 +117,9 @@ class Handler(BaseHTTPRequestHandler):
                 if url.path == "/api/run":
                     r = store.get_run(con, path, rid)
                     return self.json(r) if r else self.json({"error": "no such run"}, 404)
+                if url.path == "/api/talk":
+                    t = store.get_talk(con, path, rid)
+                    return self.json(t) if t else self.json({"error": "no conversation for this run"}, 404)
                 patch = store.get_patch(con, path, rid)
                 if patch is None:
                     return self.json({"error": "no git change for this run"}, 404)

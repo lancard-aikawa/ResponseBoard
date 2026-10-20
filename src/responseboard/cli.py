@@ -1,7 +1,7 @@
 """rb: record runs for ResponseBoard without any particular LLM.
 
   rb check                      check .responseboard/status.json
-  rb record                     check it and add it to the history database
+  rb record [--talk FILE]       check it and add it to the history database (FILE: the conversation, see talk.py)
   rb done TITLE [--summary S]   write a "done" run and record it
   rb fail TITLE [--summary S]   write a "failed" run and record it
   rb running TITLE              write a "running" run (not recorded until it ends)
@@ -10,6 +10,7 @@
   rb import-jsonl FILE          add runs from an old history.jsonl
   rb serve [--port N] [--open]  show the board in a local browser (http://127.0.0.1:28000/)
   rb statusline [--no-color]    one line for a terminal status bar
+  rb ignore [--remove | --list] add this folder to the deny list (the hooks then do nothing here)
 """
 from __future__ import annotations
 
@@ -99,7 +100,14 @@ def cmd_check(args) -> int:
 
 
 def cmd_record(args) -> int:
-    errs, inserted = store.record_file(Path(args.dir), default_writer="manual")
+    talk = None
+    if getattr(args, "talk", None):
+        try:
+            talk = json.loads(Path(args.talk).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            err(f"error: {args.talk}: {e}")
+            return 1
+    errs, inserted = store.record_file(Path(args.dir), default_writer="manual", talk=talk)
     for e in errs:
         err(f"error: {e}")
     if errs:
@@ -128,6 +136,30 @@ def cmd_history(args) -> int:
     return 0
 
 
+LEFT_MARK = {"left": "!", "task": ">", "drop": "-"}
+
+
+def cmd_left(args) -> int:
+    con = store.connect()
+    try:
+        items = store.leftovers(con, st.norm_path(args.dir))
+    finally:
+        con.close()
+    if not args.all:
+        items = [x for x in items if x["state"] == "left"]
+    if args.json:
+        out(json.dumps(items, ensure_ascii=False, indent=2))
+        return 0
+    if not items:
+        out("nothing left behind")
+    for x in items:
+        when = x["finished_at"][:16].replace("T", " ")
+        where = f" -> {x['task']}" if x["state"] == "task" else " (dropped)" if x["state"] == "drop" else ""
+        why = f" - {x['reason']}" if x.get("reason") else ""
+        out(f"{LEFT_MARK[x['state']]} {when}  {x['title']}{where}{why}")
+    return 0
+
+
 def cmd_import(args) -> int:
     root = Path(args.dir)
     try:
@@ -152,12 +184,36 @@ def cmd_import(args) -> int:
     return 0
 
 
+def cmd_ignore(args) -> int:
+    from . import ignore
+    if args.list:
+        out(f"# {ignore.path()}")
+        for pat in ignore.patterns():
+            out(pat)
+        return 0
+    if args.remove:
+        removed = ignore.remove(args.dir)
+        hit = ignore.match(args.dir)
+        if hit:
+            out(f"still skipped by: {hit} (edit {ignore.path()})")
+            return 1
+        out(f"removed: {args.dir}" if removed else f"not in the list: {args.dir}")
+        return 0
+    hit = ignore.match(args.dir)
+    if ignore.add(args.dir):
+        out(f"added: {args.dir} ({ignore.path()})")
+    else:
+        out(f"already skipped by: {hit}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="rb", description="Record LLM or manual runs for ResponseBoard.")
     p.add_argument("--dir", default=".", help="project folder (default: current folder)")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check", help="check .responseboard/status.json")
-    sub.add_parser("record", help="check status.json and add it to the history database")
+    rec = sub.add_parser("record", help="check status.json and add it to the history database")
+    rec.add_argument("--talk", metavar="FILE", help="JSON list of {role, text, at} to save with the run")
     for name, help_ in (("done", "finished, nothing for the user to do"), ("fail", "stopped on an error"),
                         ("running", "still working"), ("ask", "needs an answer from the user")):
         sp = sub.add_parser(name, help=help_)
@@ -173,6 +229,9 @@ def main(argv: list[str] | None = None) -> int:
     h.add_argument("--tool")
     h.add_argument("--limit", type=int, default=20)
     h.add_argument("--json", action="store_true")
+    lf = sub.add_parser("left", help="list not_done items that have neither a task nor drop")
+    lf.add_argument("--all", action="store_true", help="also the ones moved to a task or dropped")
+    lf.add_argument("--json", action="store_true")
     im = sub.add_parser("import-jsonl", help="add runs from an old history.jsonl")
     im.add_argument("file")
     sv = sub.add_parser("serve", help="show the board in a local browser")
@@ -180,6 +239,9 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--open", action="store_true", help="open the browser")
     sl = sub.add_parser("statusline", help="one line for a terminal status bar")
     sl.add_argument("--no-color", action="store_true")
+    ig = sub.add_parser("ignore", help="add this folder to the deny list")
+    ig.add_argument("--remove", action="store_true", help="take this folder off the list")
+    ig.add_argument("--list", action="store_true", help="show the list")
     args = p.parse_args(argv)
     args.dir = str(Path(args.dir).resolve())
     state = {"done": "done", "fail": "failed", "running": "running", "ask": "needs_you"}.get(args.cmd)
@@ -193,4 +255,5 @@ def main(argv: list[str] | None = None) -> int:
         from .server import serve
         serve(args.port, args.open)
         return 0
-    return {"check": cmd_check, "record": cmd_record, "history": cmd_history, "import-jsonl": cmd_import}[args.cmd](args)
+    return {"check": cmd_check, "record": cmd_record, "history": cmd_history, "left": cmd_left, "import-jsonl": cmd_import,
+            "ignore": cmd_ignore}[args.cmd](args)

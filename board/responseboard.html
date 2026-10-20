@@ -50,6 +50,12 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); f
 .tag { font-size: 12px; padding: 1px 8px; border-radius: 3px; background: var(--sunk); color: var(--muted); white-space: nowrap; }
 .tag.live { background: var(--ok-soft); color: var(--ok); font-weight: 700; }
 .tag b { color: var(--fg); }
+.tag.d-task { background: var(--run-soft); color: var(--run); }
+.tag.d-left { background: var(--warn-soft); color: var(--warn); font-weight: 700; }
+.ledger-h { font-size: 12.5px; font-weight: 700; margin-top: 6px; }
+.row.lrow { flex-wrap: wrap; row-gap: 2px; }
+.row.lrow > .grow { flex: 1 1 15em; }
+.row.lrow .tag { white-space: normal; }
 .plus { color: var(--add); } .minus { color: var(--del); }
 
 /* clickable: border or fill, pointer, hover / press / focus change */
@@ -63,6 +69,18 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); f
 .btn.primary:hover { filter: brightness(1.1); background: var(--accent); }
 .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
 .btn.small { padding: 2px 9px; font-size: 12.5px; }
+/* kinds of buttons: dialog openers end with ⤢, filters are pills (filled while on), moves carry ◀ ▶,
+   and only "答えをコピー" and "最新に戻る" are filled (primary) */
+.btn.dlg-open::after { content: "⤢"; font-size: .95em; opacity: .85; }
+.btn .cnt { font-size: 12.5px; padding: 0 6px; border-radius: 999px; background: var(--sunk); color: var(--fg); }
+.btn .cnt .plus, .btn .cnt .minus { font-weight: 700; }
+.btn.filter { border-radius: 999px; }
+.tabs { display: inline-flex; border: 1px solid var(--accent); border-radius: 6px; overflow: hidden; }
+.tabs .tab { font: inherit; font-size: 13px; padding: 3px 12px; border: 0; background: var(--surface); color: var(--accent); cursor: pointer; }
+.tabs .tab + .tab { border-left: 1px solid var(--accent); }
+.tabs .tab:hover { background: var(--accent-soft); }
+.tabs .tab[aria-selected="true"] { background: var(--accent); color: var(--accent-fg); cursor: default; }
+.tabs .tab:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 .btn:disabled { opacity: .45; cursor: default; transform: none; background: var(--surface); }
 .select { font: inherit; font-size: 14px; cursor: pointer; padding: 6px 10px; border-radius: 6px;
   border: 1px solid var(--accent); background: var(--surface); color: var(--fg); max-width: 100%; }
@@ -197,6 +215,60 @@ pre.diff .a { background: var(--add-soft); color: var(--add); }
 pre.diff .d { background: var(--del-soft); color: var(--del); }
 pre.diff .hk { color: var(--accent); }
 pre.diff .mt { color: var(--muted); }
+.talk { display: grid; gap: 8px; }
+.msg { border-radius: var(--r); padding: 6px 10px; max-width: 100%; min-width: 0; }
+.msg .who { font-size: 11px; color: var(--muted); display: block; margin-bottom: 2px; }
+.msg .say { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
+.msg.user { background: var(--accent-soft); justify-self: end; max-width: 92%; }
+.msg.assistant { background: var(--sunk); }
+.msg .say.long { max-height: 18em; overflow-y: auto; }
+details.ops > summary { list-style: none; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; width: fit-content;
+  font-size: 12.5px; color: var(--muted); padding: 2px 8px; border: 1px dashed var(--line); border-radius: 999px; }
+details.ops > summary::-webkit-details-marker { display: none; }
+details.ops > summary::before { content: "▸"; font-size: 10px; }
+details.ops[open] > summary::before { content: "▾"; }
+details.ops > summary:hover { background: var(--accent-soft); color: var(--fg); }
+details.ops .op { font-family: var(--font-num); font-size: 12px; color: var(--muted); padding: 1px 0 1px 18px; overflow-wrap: anywhere; }
+details.ops .op.edit { color: var(--fg); }
+details.ops button.op { display: block; width: 100%; text-align: left; font: inherit; font-family: var(--font-num); font-size: 12px;
+  background: none; border: 0; border-left: 2px solid var(--accent); margin: 1px 0 1px 12px; padding: 1px 6px; color: var(--accent); cursor: pointer; width: calc(100% - 12px); }
+details.ops button.op:hover { background: var(--accent-soft); text-decoration: underline; }
+.diff-file.hit { outline: 2px solid var(--accent); }
+.dlg .kanboard { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.dlg .kanboard .kcol { display: grid; gap: 8px; align-content: start; background: var(--sunk); border-radius: 8px; padding: 8px; min-height: 60px; }
+@media (max-width: 760px) { .dlg .kanboard { grid-template-columns: minmax(0, 1fr); } }
+/* conversation dialog */
+dialog.dlg { border: 1px solid var(--line); border-radius: 12px; padding: 0; background: var(--surface); color: var(--fg);
+  width: min(960px, calc(100% - 16px)); max-width: none; height: min(88vh, 1000px); max-height: none; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+dialog.dlg[open] { display: flex; flex-direction: column; }
+dialog.dlg::backdrop { background: rgba(10, 18, 26, .55); }
+.dlg-h { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.dlg-h h2 { font-size: 16px; margin: 0; }
+.dlg-h .t { min-width: 0; flex: 1 1 260px; overflow-wrap: anywhere; font-size: 14px; }
+.dlg-b { flex: 1; overflow-y: auto; padding: 14px; display: grid; align-content: start; grid-auto-rows: max-content; gap: 10px; }
+.dlg-f { padding: 8px 14px; border-top: 1px solid var(--line); }
+.dlg .msg { padding: 8px 14px; }
+.dlg .msg.user { max-width: 80%; }
+.dlg pre.diff { max-height: none; }
+.dlg-b > .diff-file + .diff-file { margin-top: -2px; }
+@media (max-width: 560px) { dialog.dlg { height: calc(100% - 16px); } .dlg .msg.user { max-width: 100%; } }
+/* markdown in messages */
+.md { font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; min-width: 0; }
+.md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md pre, .md blockquote, .md .tbl { margin: 0 0 8px; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { font-size: 15px; margin: 12px 0 6px; }
+.md h1, .md h2 { font-size: 16px; border-bottom: 1px solid var(--line); padding-bottom: 2px; }
+.md ul, .md ol { padding-left: 1.4em; } .md li { margin: 2px 0; }
+.md code { font-family: var(--font-num); font-size: 12.5px; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.md pre { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; overflow-x: auto; }
+.md pre code { border: 0; padding: 0; background: none; white-space: pre; }
+.md blockquote { border-left: 3px solid var(--line); padding-left: 10px; color: var(--muted); }
+.md .tbl { overflow-x: auto; }
+.md table { border-collapse: collapse; font-size: 13px; }
+.md th, .md td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; vertical-align: top; }
+.md th { background: var(--surface); }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+.md a { color: var(--accent); text-decoration: underline; }
 #err { color: var(--bad); font-size: 13px; }
 
 @media (max-width: 980px) { .ppf { grid-template-columns: minmax(0, 1fr); } }
@@ -228,6 +300,7 @@ pre.diff .mt { color: var(--muted); }
     <section class="card3 k-next" id="next" aria-label="未来"></section>
   </div>
 </div>
+<dialog class="dlg" id="dlg" aria-labelledby="dlg-h"></dialog>
 
 <script type="application/json" id="sample">{
  "status": {
@@ -278,11 +351,13 @@ pre.diff .mt { color: var(--muted); }
    "not_done": [
     {
      "title": "公開",
-     "reason": "公開先が決まっていない"
+     "reason": "公開先が決まっていない",
+     "task": "t7"
     },
     {
      "title": "アイコン",
-     "reason": "今回の範囲の外"
+     "reason": "今回の範囲の外",
+     "drop": true
     }
    ],
    "next": {
@@ -386,6 +461,14 @@ pre.diff .mt { color: var(--muted); }
     "title": "取れないときの表示を足した",
     "tool": "claude-code"
    }
+  ],
+  "left_behind": [
+   {
+    "title": "見た目の調整",
+    "reason": "形が決まってから",
+    "finished_at": "2026-10-18T10:05:00+09:00",
+    "section_id": "第 1 段"
+   }
   ]
  },
  "overview": [
@@ -400,6 +483,7 @@ pre.diff .mt { color: var(--muted); }
    "checks_failed": 0,
    "section_id": "第 3 段",
    "section_title": "第 3 段: 仕上げ",
+   "talk": 7,
    "tasks": {
     "t1": "done",
     "t2": "done",
@@ -411,6 +495,18 @@ pre.diff .mt { color: var(--muted); }
    },
    "next_task": "t7",
    "summary": "OS が暗い設定のときの色を足した。公開先を決めてほしい。",
+   "not_done": [
+    {
+     "title": "公開",
+     "reason": "公開先が決まっていない",
+     "task": "t7"
+    },
+    {
+     "title": "アイコン",
+     "reason": "今回の範囲の外",
+     "drop": true
+    }
+   ],
    "git": {
     "files": 1,
     "add": 4,
@@ -428,6 +524,7 @@ pre.diff .mt { color: var(--muted); }
    "checks_failed": 0,
    "section_id": "第 2 段",
    "section_title": "第 2 段: 天気をつなぐ",
+   "talk": 6,
    "tasks": {
     "t1": "done",
     "t2": "done",
@@ -439,6 +536,7 @@ pre.diff .mt { color: var(--muted); }
    },
    "next_task": "t6",
    "summary": "通信が切れたら一文を出す。",
+   "not_done": [],
    "git": {
     "files": 1,
     "add": 6,
@@ -456,6 +554,7 @@ pre.diff .mt { color: var(--muted); }
    "checks_failed": 0,
    "section_id": "第 2 段",
    "section_title": "第 2 段: 天気をつなぐ",
+   "talk": 7,
    "tasks": {
     "t1": "done",
     "t2": "done",
@@ -467,6 +566,13 @@ pre.diff .mt { color: var(--muted); }
    },
    "next_task": "t5",
    "summary": "手元のサーバで開けば取れた。module に変えた。",
+   "not_done": [
+    {
+     "title": "取れないときの表示",
+     "reason": "次の実行で",
+     "task": "t5"
+    }
+   ],
    "git": {
     "files": 2,
     "add": 4,
@@ -484,6 +590,7 @@ pre.diff .mt { color: var(--muted); }
    "checks_failed": 1,
    "section_id": "第 2 段",
    "section_title": "第 2 段: 天気をつなぐ",
+   "talk": 6,
    "tasks": {
     "t1": "done",
     "t2": "done",
@@ -495,6 +602,13 @@ pre.diff .mt { color: var(--muted); }
    },
    "next_task": "t4",
    "summary": "fetch が CORS で失敗。file:// で開いていたのが原因らしい。",
+   "not_done": [
+    {
+     "title": "画面への反映",
+     "reason": "取れていないため",
+     "task": "t4"
+    }
+   ],
    "git": {
     "files": 1,
     "add": 4,
@@ -512,6 +626,7 @@ pre.diff .mt { color: var(--muted); }
    "checks_failed": 0,
    "section_id": "第 1 段",
    "section_title": "第 1 段: 画面の形",
+   "talk": 7,
    "tasks": {
     "t1": "done",
     "t2": "done",
@@ -523,6 +638,7 @@ pre.diff .mt { color: var(--muted); }
    },
    "next_task": "t4",
    "summary": "7 日分の列を足した。並べ方を選んでほしい。",
+   "not_done": [],
    "git": {
     "files": 1,
     "add": 4,
@@ -540,6 +656,7 @@ pre.diff .mt { color: var(--muted); }
    "checks_failed": 0,
    "section_id": "第 1 段",
    "section_title": "第 1 段: 画面の形",
+   "talk": 7,
    "tasks": {
     "t1": "done",
     "t2": "done",
@@ -551,6 +668,13 @@ pre.diff .mt { color: var(--muted); }
    },
    "next_task": "t3",
    "summary": "気温を 1 枚のカードで出す。値はまだ仮。",
+   "not_done": [
+    {
+     "title": "本物の天気",
+     "reason": "第 2 段でつなぐ",
+     "task": "t4"
+    }
+   ],
    "git": {
     "files": 2,
     "add": 5,
@@ -568,6 +692,7 @@ pre.diff .mt { color: var(--muted); }
    "checks_failed": 0,
    "section_id": "第 1 段",
    "section_title": "第 1 段: 画面の形",
+   "talk": 7,
    "tasks": {
     "t1": "done",
     "t2": "todo",
@@ -579,6 +704,12 @@ pre.diff .mt { color: var(--muted); }
    },
    "next_task": "t2",
    "summary": "index.html と app.js を置いた。",
+   "not_done": [
+    {
+     "title": "見た目の調整",
+     "reason": "形が決まってから"
+    }
+   ],
    "git": {
     "files": 2,
     "add": 4,
@@ -637,11 +768,13 @@ pre.diff .mt { color: var(--muted); }
      "not_done": [
       {
        "title": "公開",
-       "reason": "公開先が決まっていない"
+       "reason": "公開先が決まっていない",
+       "task": "t7"
       },
       {
        "title": "アイコン",
-       "reason": "今回の範囲の外"
+       "reason": "今回の範囲の外",
+       "drop": true
       }
      ],
      "next": {
@@ -881,7 +1014,8 @@ pre.diff .mt { color: var(--muted); }
      "not_done": [
       {
        "title": "取れないときの表示",
-       "reason": "次の実行で"
+       "reason": "次の実行で",
+       "task": "t5"
       }
      ],
      "next": {
@@ -1005,7 +1139,8 @@ pre.diff .mt { color: var(--muted); }
      "not_done": [
       {
        "title": "画面への反映",
-       "reason": "取れていないため"
+       "reason": "取れていないため",
+       "task": "t4"
       }
      ],
      "next": {
@@ -1264,7 +1399,8 @@ pre.diff .mt { color: var(--muted); }
      "not_done": [
       {
        "title": "本物の天気",
-       "reason": "第 2 段でつなぐ"
+       "reason": "第 2 段でつなぐ",
+       "task": "t4"
       }
      ],
      "next": {
@@ -1496,6 +1632,278 @@ pre.diff .mt { color: var(--muted); }
   "3": "diff --git a/app.js b/app.js\nindex 55d4a63..a0afd17 100644\n--- a/app.js\n+++ b/app.js\n@@ -2,4 +2,7 @@ const app = document.getElementById('app');\n function today(t) {\n   return `<div class=card>${t.temp}°<\/div>`;\n }\n-app.innerHTML = today({ temp: 21 });\n+function week(days) {\n+  return days.map(today).join('');\n+}\n+app.innerHTML = today({ temp: 21 }) + week([{ temp: 19 }, { temp: 23 }]);\n",
   "2": "diff --git a/app.js b/app.js\nindex 85026a8..55d4a63 100644\n--- a/app.js\n+++ b/app.js\n@@ -1,2 +1,5 @@\n const app = document.getElementById('app');\n-app.textContent = '天気';\n+function today(t) {\n+  return `<div class=card>${t.temp}°<\/div>`;\n+}\n+app.innerHTML = today({ temp: 21 });\ndiff --git a/style.css b/style.css\nnew file mode 100644\nindex 0000000..75a3622\n--- /dev/null\n+++ b/style.css\n@@ -0,0 +1 @@\n+.card { border: 1px solid #ccc; padding: 8px; }\n",
   "1": "diff --git a/app.js b/app.js\nnew file mode 100644\nindex 0000000..85026a8\n--- /dev/null\n+++ b/app.js\n@@ -0,0 +1,2 @@\n+const app = document.getElementById('app');\n+app.textContent = '天気';\ndiff --git a/index.html b/index.html\nnew file mode 100644\nindex 0000000..6339036\n--- /dev/null\n+++ b/index.html\n@@ -0,0 +1,2 @@\n+<main id=app><\/main>\n+<script src=app.js><\/script>\n"
+ },
+ "talks": {
+  "7": {
+   "items": [
+    {
+     "role": "user",
+     "text": "暗い画面にも合わせて",
+     "at": "2026-10-18T16:00:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "やってみます。",
+     "at": "2026-10-18T16:00:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Read: index.html",
+     "at": "2026-10-18T16:00:00+09:00"
+    },
+    {
+     "role": "edit",
+     "text": "style.css",
+     "at": "2026-10-18T16:00:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Bash: 暗い設定で開く",
+     "at": "2026-10-18T16:00:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Bash: 明るい設定で開く",
+     "at": "2026-10-18T16:00:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "**暗い画面に合わせた**\n\nOS が暗い設定のときの色を足した。公開先を決めてほしい。\n\n| 確認 | 結果 |\n|---|---|\n| 暗い設定で開く | ✅ 通った |\n| 明るい設定で開く | ✅ 通った |\n\n残したこと:\n- 公開（公開先が決まっていない）\n- アイコン（今回の範囲の外）\n\n変えたファイル: `style.css`\n\n> どこに公開しますか？",
+     "at": "2026-10-18T16:00:00+09:00"
+    }
+   ],
+   "truncated": false
+  },
+  "6": {
+   "items": [
+    {
+     "role": "user",
+     "text": "取れないときにも何か出して",
+     "at": "2026-10-18T15:10:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "やってみます。",
+     "at": "2026-10-18T15:10:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Read: index.html",
+     "at": "2026-10-18T15:10:00+09:00"
+    },
+    {
+     "role": "edit",
+     "text": "app.js",
+     "at": "2026-10-18T15:10:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Bash: 通信を切って開く",
+     "at": "2026-10-18T15:10:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "**取れないときの表示を足した**\n\n通信が切れたら一文を出す。\n\n| 確認 | 結果 |\n|---|---|\n| 通信を切って開く | ✅ 通った |\n\n変えたファイル: `app.js`",
+     "at": "2026-10-18T15:10:00+09:00"
+    }
+   ],
+   "truncated": false
+  },
+  "5": {
+   "items": [
+    {
+     "role": "user",
+     "text": "手元のサーバで開いて、もう一度試して",
+     "at": "2026-10-18T14:30:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "やってみます。",
+     "at": "2026-10-18T14:30:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Read: index.html",
+     "at": "2026-10-18T14:30:00+09:00"
+    },
+    {
+     "role": "edit",
+     "text": "app.js",
+     "at": "2026-10-18T14:30:00+09:00"
+    },
+    {
+     "role": "edit",
+     "text": "index.html",
+     "at": "2026-10-18T14:30:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Bash: 東京の 7 日分",
+     "at": "2026-10-18T14:30:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "**天気 API から 7 日分を出した**\n\n手元のサーバで開けば取れた。module に変えた。\n\n| 確認 | 結果 |\n|---|---|\n| 東京の 7 日分 | ✅ 通った |\n\n残したこと:\n- 取れないときの表示（次の実行で）\n\n変えたファイル: `app.js`、`index.html`",
+     "at": "2026-10-18T14:30:00+09:00"
+    }
+   ],
+   "truncated": false
+  },
+  "4": {
+   "items": [
+    {
+     "role": "user",
+     "text": "本物の天気を出したい。API をつないで",
+     "at": "2026-10-18T14:00:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "やってみます。",
+     "at": "2026-10-18T14:00:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Read: index.html",
+     "at": "2026-10-18T14:00:00+09:00"
+    },
+    {
+     "role": "edit",
+     "text": "api.js",
+     "at": "2026-10-18T14:00:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Bash: 東京の 7 日分",
+     "at": "2026-10-18T14:00:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "**天気 API をつなぐ途中で止まった**\n\nfetch が CORS で失敗。file:// で開いていたのが原因らしい。\n\n| 確認 | 結果 |\n|---|---|\n| 東京の 7 日分 | ✕ 失敗（CORS エラー） |\n\n残したこと:\n- 画面への反映（取れていないため）\n\n変えたファイル: `api.js`",
+     "at": "2026-10-18T14:00:00+09:00"
+    }
+   ],
+   "truncated": false
+  },
+  "3": {
+   "items": [
+    {
+     "role": "user",
+     "text": "週の予報も並べて",
+     "at": "2026-10-18T11:20:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "やってみます。",
+     "at": "2026-10-18T11:20:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Read: index.html",
+     "at": "2026-10-18T11:20:00+09:00"
+    },
+    {
+     "role": "edit",
+     "text": "app.js",
+     "at": "2026-10-18T11:20:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Bash: 列が出る",
+     "at": "2026-10-18T11:20:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Bash: 狭い画面",
+     "at": "2026-10-18T11:20:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "**週の予報を横に並べた**\n\n7 日分の列を足した。並べ方を選んでほしい。\n\n| 確認 | 結果 |\n|---|---|\n| 列が出る | ✅ 通った |\n| 狭い画面 | − しなかった（まだ見ていない） |\n\n変えたファイル: `app.js`\n\n> 週の予報は横に流す？縦に積む？",
+     "at": "2026-10-18T11:20:00+09:00"
+    }
+   ],
+   "truncated": false
+  },
+  "2": {
+   "items": [
+    {
+     "role": "user",
+     "text": "今日の天気をカードで出して",
+     "at": "2026-10-18T10:40:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "やってみます。",
+     "at": "2026-10-18T10:40:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Read: index.html",
+     "at": "2026-10-18T10:40:00+09:00"
+    },
+    {
+     "role": "edit",
+     "text": "app.js",
+     "at": "2026-10-18T10:40:00+09:00"
+    },
+    {
+     "role": "edit",
+     "text": "style.css",
+     "at": "2026-10-18T10:40:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Bash: カードが出る",
+     "at": "2026-10-18T10:40:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "**今日の天気カードを足した**\n\n気温を 1 枚のカードで出す。値はまだ仮。\n\n| 確認 | 結果 |\n|---|---|\n| カードが出る | ✅ 通った |\n\n残したこと:\n- 本物の天気（第 2 段でつなぐ）\n\n変えたファイル: `app.js`、`style.css`",
+     "at": "2026-10-18T10:40:00+09:00"
+    }
+   ],
+   "truncated": false
+  },
+  "1": {
+   "items": [
+    {
+     "role": "user",
+     "text": "天気のウィジェットを作りたい。まず画面の骨組みだけ",
+     "at": "2026-10-18T10:05:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "やってみます。",
+     "at": "2026-10-18T10:05:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Read: index.html",
+     "at": "2026-10-18T10:05:00+09:00"
+    },
+    {
+     "role": "edit",
+     "text": "index.html",
+     "at": "2026-10-18T10:05:00+09:00"
+    },
+    {
+     "role": "edit",
+     "text": "app.js",
+     "at": "2026-10-18T10:05:00+09:00"
+    },
+    {
+     "role": "tool",
+     "text": "Bash: ブラウザで開く",
+     "at": "2026-10-18T10:05:00+09:00"
+    },
+    {
+     "role": "assistant",
+     "text": "**画面の骨組みを作った**\n\nindex.html と app.js を置いた。\n\n| 確認 | 結果 |\n|---|---|\n| ブラウザで開く | ✅ 通った |\n\n残したこと:\n- 見た目の調整（形が決まってから）\n\n変えたファイル: `index.html`、`app.js`",
+     "at": "2026-10-18T10:05:00+09:00"
+    }
+   ],
+   "truncated": false
+  }
  }
 }</script>
 <script>
@@ -1506,7 +1914,7 @@ const STATUS = {
   failed:    { mark: "✕", label: "失敗" },
   running:   { mark: "◐", label: "実行中" },
 };
-const ICON = { past: "🕘", now: "📍", next: "🧭", did: "✅", notDone: "⊘", diff: "±", note: "📝", moved: "⇄", ask: "▲", flow: "🗂" };
+const ICON = { past: "🕘", now: "📍", next: "🧭", did: "✅", notDone: "↪", diff: "±", note: "📝", moved: "⇄", ask: "▲", flow: "🗂", talk: "💬", tool: "⚙", edit: "✎", kanban: "▦", ledger: "🧾", left: "⚠", drop: "⊘" };
 const STEP = { done: "●", doing: "◐", todo: "○", blocked: "✕" };
 const COLS = [["doing", "作業中"], ["review", "確認待ち"], ["todo", "未着手"], ["done", "完了"]];
 const COLNAME = Object.fromEntries(COLS);
@@ -1552,6 +1960,7 @@ function bundleSource(b) {
     overview: async () => b.overview || [],
     run: async id => b.runs?.[id] || null,
     patch: async id => b.patches?.[id] ?? null,
+    talk: async id => b.talks?.[id] ?? null,
   };
 }
 async function api(u, text) { const r = await fetch(u, { cache: "no-store" }); if (!r.ok) throw new Error(`${u}: ${r.status}`); return text ? r.text() : r.json(); }
@@ -1562,6 +1971,7 @@ function liveSource(path) {
     overview: () => api(`api/overview?${qp(path)}`),
     run: id => api(`api/run?${qp(path)}&id=${id}`).catch(() => null),
     patch: id => api(`api/diff?${qp(path)}&id=${id}`, true).catch(() => null),
+    talk: id => api(`api/talk?${qp(path)}&id=${id}`).catch(() => null),
   };
 }
 
@@ -1587,7 +1997,7 @@ function nodes() {
     const s = latest.section;
     list.push({ id: "now", status: latest.run.status, title: latest.run.title, finished_at: latest.run.finished_at,
       section_id: secId(s), section_title: s?.title, tasks: Object.fromEntries((latest.tasks || []).map(t => [t.id, t.column])),
-      next_task: latest.run.next?.task, moved: [] });
+      next_task: latest.run.next?.task, not_done: latest.run.not_done || [], moved: [] });
   }
   return list;
 }
@@ -1597,6 +2007,27 @@ function matches(n) {
   return true;
 }
 const chosenId = () => sel ?? latestId();
+
+// Where a not_done item went. The same title written again later is the same item, and the later word wins.
+const dest = x => x.task ? "task" : x.drop ? "drop" : "left";
+function leftovers(list, sid) {
+  const items = new Map();
+  for (const n of list) {
+    if (sid !== undefined && n.section_id !== sid) continue;
+    for (const x of n.not_done || []) { items.delete(x.title); items.set(x.title, { ...x, state: dest(x), run: n }); }
+  }
+  return [...items.values()];
+}
+const upToChosen = () => { const all = nodes(), i = all.findIndex(x => String(x.id) === String(snap.id)); return i < 0 ? all : all.slice(0, i + 1); };
+const taskTitle = id => ((snap?.status.tasks || []).find(t => t.id === id) || (latest?.tasks || []).find(t => t.id === id))?.title || id;
+function destTag(x, later) {
+  if (x.task) return h("span", { class: "tag d-task" }, `→ ${ICON.kanban} `, taskTitle(x.task));
+  if (x.drop) return h("span", { class: "tag" }, `${ICON.drop} やらない`);
+  if (later && later.state !== "left") return h("span", { class: later.state === "task" ? "tag d-task" : "tag" },
+    later.state === "task" ? `あとで → ${ICON.kanban} ${taskTitle(later.task)}` : `あとで ${ICON.drop} やらないと決めた`);
+  return h("span", { class: "tag d-left" }, `${ICON.left} 置き去り`);
+}
+const goRun = n => h("button", { class: "btn small", type: "button", onclick: () => choose(String(n.id) === String(latestId()) ? null : n.id) }, "その回へ ▶");
 
 // ---- top: the newest run ----
 function renderSignal() {
@@ -1649,16 +2080,16 @@ function renderFlow() {
   const cap = n => { const c = n || all.find(x => String(x.id) === cur); put(capEl, c ? h("span", null, mk(c.status), " ", h("span", { class: "num" }, fmt(c.finished_at)), " ", c.title) : ""); };
   const older = lanes.slice(0, Math.max(0, lanes.length - LANES_SHOWN)), recent = lanes.slice(-LANES_SHOWN);
   const filt = [];
-  if (fSection != null) filt.push(h("button", { class: "btn small", type: "button", "aria-pressed": "true", onclick: () => { fSection = null; render(); } }, `セクション: ${fSection} ✕`));
+  if (fSection != null) filt.push(h("button", { class: "btn small filter", type: "button", "aria-pressed": "true", onclick: () => { fSection = null; render(); } }, `セクション: ${fSection} ✕`));
   if (fTask) { const t = (snap?.status.tasks || latest.tasks || []).find(x => x.id === fTask);
-    filt.push(h("button", { class: "btn small", type: "button", "aria-pressed": "true", onclick: () => { fTask = null; render(); } }, `タスク: ${t ? t.title : fTask} ✕`)); }
+    filt.push(h("button", { class: "btn small filter", type: "button", "aria-pressed": "true", onclick: () => { fTask = null; render(); } }, `タスク: ${t ? t.title : fTask} ✕`)); }
   put(el, h("section", { class: "flow", "aria-label": "履歴" },
     h("div", { class: "flow-h" },
       h("h2", null, `${ICON.flow} 履歴`), h("span", { class: "hint" }, "セクションごとの流れ。丸を押すとその時点を見る"),
       h("span", { class: "spacer" }), ...filt,
       (fSection != null || fTask) && h("span", { class: "tag" }, "当てはまる ", h("b", { class: "num" }, hits.length), " 件"),
-      h("button", { class: "btn small", type: "button", onclick: () => step(-1), disabled: (order.length ? at === 0 : cur === String(all[0]?.id)) || null }, "◀ 前"),
-      h("button", { class: "btn small", type: "button", onclick: () => step(1), disabled: (order.length ? at === order.length - 1 : cur === String(all[all.length - 1]?.id)) || null }, "次 ▶")),
+      h("button", { class: "btn small", type: "button", onclick: () => step(-1), disabled: (order.length ? at === 0 : cur === String(all[0]?.id)) || null }, "◀ 前の回"),
+      h("button", { class: "btn small", type: "button", onclick: () => step(1), disabled: (order.length ? at === order.length - 1 : cur === String(all[all.length - 1]?.id)) || null }, "次の回 ▶")),
     older.length > 0 && fold("older", `前のセクション ${older.length} 個`, h("div", { class: "lanes" }, older.map(lane)), "older"),
     h("div", { class: "lanes" }, recent.map(lane)),
     capEl));
@@ -1693,54 +2124,244 @@ function renderPast() {
       moved.map(m => { const t = (s.tasks || []).find(x => x.id === m.id);
         return h("div", { class: "row" }, h("span", { class: "grow" }, t?.title || m.id), h("span", { class: "tag" }, `${m.from ? COLNAME[m.from] : "新規"} → ${COLNAME[m.to] || m.to}`)); })),
   ].filter(Boolean);
-  const nd = [...notDone.map(x => h("div", { class: "row" }, h("span", { style: "flex:none" }, ICON.notDone), h("span", { class: "grow" }, x.title, x.reason && h("span", { class: "why" }, ` — ${x.reason}`)))),
-              ...skipped.map(c => h("div", { class: "row" }, h("span", { class: "r-skip", style: "flex:none" }, "−"), h("span", { class: "grow" }, `確認しなかった: ${c.name}`, c.detail && h("span", { class: "why" }, ` — ${c.detail}`))))];
+  const later = Object.fromEntries(leftovers(nodes()).map(x => [x.title, x]));
+  const why = x => x.reason && h("span", { class: "why" }, ` — ${x.reason}`);
+  const part = (name, xs, row) => xs.length > 0 && h("div", null, h("div", { class: "hint" }, `${name}（${xs.length}）`), xs.map(row));
+  const leftNow = notDone.filter(x => dest(x) === "left");
+  const nd = [
+    part(`→ ${ICON.kanban} 続きはタスクへ`, notDone.filter(x => dest(x) === "task"), x => h("div", { class: "row lrow" }, h("span", { class: "grow" }, x.title, why(x)), destTag(x))),
+    part(`${ICON.left} 置き去り（行き先未定）`, leftNow, x => h("div", { class: "row lrow" }, h("span", { class: "grow" }, x.title, why(x)),
+      later[x.title]?.state !== "left" && destTag(x, later[x.title]))),
+    part(`${ICON.drop} やらないと決めた`, notDone.filter(x => dest(x) === "drop"), x => h("div", { class: "row lrow" }, h("span", { class: "grow" }, x.title, why(x)))),
+    part("− 確認しなかった", skipped, c => h("div", { class: "row" }, h("span", { class: "grow" }, c.name, c.detail && h("span", { class: "why" }, ` — ${c.detail}`)))),
+  ].filter(Boolean);
+  const ndCount = notDone.length + skipped.length;
   const passed = checks.filter(c => c.result === "pass").length;
   const el = document.getElementById("past");
   put(el, 
-    h("div", { class: "c3-h" }, h("span", { class: "ico", "aria-hidden": "true" }, ICON.past), h("h2", null, "過去"), h("span", { class: "sub" }, "したこと・しなかったこと")),
+    h("div", { class: "c3-h" }, h("span", { class: "ico", "aria-hidden": "true" }, ICON.past), h("h2", null, "過去"), h("span", { class: "sub" }, "したこと・残したこと")),
     h("p", { class: "lead" }, mk(run.status), h("span", null, run.title)),
     h("div", { class: "chips" },
       h("span", { class: `tag s-${run.status}` }, h("span", { class: "mark" }, STATUS[run.status]?.mark), " ", STATUS[run.status]?.label),
       h("span", { class: "tag num" }, fmt(run.finished_at)),
       checks.length > 0 && h("span", { class: "tag" }, "確認 ", h("b", { class: "num" }, `${passed}/${checks.length}`)),
-      git && h("span", { class: "tag num" }, `${git.files.length} ファイル `, h("span", { class: "plus" }, `+${gAdd}`), " ", h("span", { class: "minus" }, `−${gDel}`)),
-      nd.length > 0 && h("span", { class: "tag" }, `${ICON.notDone} しなかった `, h("b", { class: "num" }, nd.length))),
+      git?.files.length > 0 && h("span", { class: "tag num" }, `${git.files.length} ファイル `, h("span", { class: "plus" }, `+${gAdd}`), " ", h("span", { class: "minus" }, `−${gDel}`)),
+      ndCount > 0 && h("span", { class: "tag" }, `${ICON.notDone} 残した `, h("b", { class: "num" }, ndCount)),
+      leftNow.some(x => later[x.title]?.state === "left") && h("span", { class: "tag d-left" }, `${ICON.left} 置き去り `,
+        h("b", { class: "num" }, leftNow.filter(x => later[x.title]?.state === "left").length))),
     run.summary && h("p", { class: "para" }, run.summary),
+    (DLG.talk.has(n || {}) || DLG.diff.has(n || {})) && h("div", { class: "chips" }, DLG.talk.has(n) && dlgButton("talk", n), DLG.diff.has(n) && dlgButton("diff", n)),
     did.length > 0 && fold("did", `${ICON.did} したこと`, did),
-    nd.length > 0 && fold("notdone", `${ICON.notDone} しなかったこと（${nd.length}）`, nd),
-    git && diffFold(git),
-    (run.notes || s.source?.written_by) && fold("notes", `${ICON.note} 説明`, [run.notes && h("p", { class: "para", style: "white-space:pre-wrap" }, run.notes),
+    nd.length > 0 && fold("notdone", `${ICON.notDone} 残したこと（${ndCount}）`, nd),
+    (run.notes || s.source?.written_by) && fold("notes", `${ICON.note} 説明`, [run.notes && h("div", { class: "md" }, md(run.notes)),
       s.source?.written_by && h("div", { class: "hint" }, `この結果は ${WRITER[s.source.written_by] || s.source.written_by}（${s.source.tool || "?"}${s.source.model ? " · " + s.source.model : ""}）`)]));
 }
 
-function diffFold(git) {
-  const id = snap.id;
-  const base = { prev: "前の実行から", head: "最後のコミットから", empty: "最初から" }[git.base_kind] || "";
-  const body = h("div", { class: "fold-body" });
-  const d = fold(`diff`, `${ICON.diff} 差分（git ${git.files.length} ファイル）`, []);
-  d.querySelector(".fold-body").replaceWith(body);
-  let loaded = false;
-  const load = async () => {
-    if (loaded) return; loaded = true;
-    put(body, h("div", { class: "hint" }, "読み込み中…"));
-    const text = await src.patch(id);
-    if (String(snap.id) !== String(id)) return;
-    put(body, 
-      h("div", { class: "hint" }, `${base}の変化`, git.branch ? `・ブランチ ${git.branch}` : "", git.truncated ? "・長いので途中まで" : ""),
-      (git.commits || []).length > 0 && h("div", null, h("div", { class: "hint" }, "この間のコミット"), git.commits.map(c => h("div", { class: "row" }, h("code", null, c.hash), h("span", { class: "grow" }, c.subject)))),
-      text == null ? h("div", { class: "hint" }, "差分を読めませんでした。") : splitPatch(text).map(f => {
-        const g = git.files.find(x => x.path === f.path || f.path.endsWith(x.path)) || {};
-        const fd = h("details", { class: "diff-file" }, h("summary", null, h("code", { class: "grow path" }, f.path),
-          h("span", { class: "num", style: "font-size:12px;flex:none" }, h("span", { class: "plus" }, `+${g.add ?? "?"}`), " ", h("span", { class: "minus" }, `−${g.del ?? "?"}`))));
-        fd.addEventListener("toggle", () => { if (fd.open && !fd.querySelector("pre")) fd.append(patchPre(f.lines)); }, { once: false });
-        return fd;
-      }));
-  };
-  d.addEventListener("opened", load);
-  if (d.open) load();
-  return d;
+// ---- markdown (built as DOM nodes, never innerHTML) ----
+const SAFE_URL = /^https?:\/\//i;
+function mdInline(text) {
+  const out = [];
+  const re = /(`+)([\s\S]*?[^`])\1(?!`)|\*\*(.+?)\*\*|~~(.+?)~~|(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<>()（）「」、。]+)/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m[1]) out.push(h("code", null, m[2].trim() || m[2]));
+    else if (m[3] != null) out.push(h("strong", null, mdInline(m[3])));
+    else if (m[4] != null) out.push(h("del", null, mdInline(m[4])));
+    else if (m[5] != null) out.push(h("em", null, mdInline(m[5])));
+    else if (m[6] != null) out.push(SAFE_URL.test(m[7]) ? h("a", { href: m[7], target: "_blank", rel: "noopener noreferrer" }, mdInline(m[6]))
+      : h("span", { title: m[7] }, mdInline(m[6])));
+    else out.push(h("a", { href: m[8], target: "_blank", rel: "noopener noreferrer" }, m[8]));
+    last = re.lastIndex;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
 }
+const withBreaks = lines => lines.flatMap((l, i) => i ? [h("br"), mdInline(l)] : [mdInline(l)]);
+function md(text) {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n"), out = [];
+  const LIST = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/, ROW = l => /^\s*\|.*\|\s*$/.test(l);
+  const cells = l => l.trim().replace(/^\||\|$/g, "").split(/(?<!\\)\|/).map(c => c.trim().replace(/\\\|/g, "|"));
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (!l.trim()) { i++; continue; }
+    const fence = l.match(/^\s*(```+|~~~+)\s*([\w-]*)/);
+    if (fence) {
+      const body = []; i++;
+      while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++]);
+      i++;
+      out.push(h("pre", null, h("code", fence[2] ? { "data-lang": fence[2] } : null, body.join("\n"))));
+      continue;
+    }
+    const hd = l.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/);
+    if (hd) { out.push(h(`h${hd[1].length}`, null, mdInline(hd[2]))); i++; continue; }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) { out.push(h("hr")); i++; continue; }
+    if (ROW(l) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(lines[i + 1])) {
+      const head = cells(l); i += 2;
+      const rows = [];
+      while (i < lines.length && ROW(lines[i])) rows.push(cells(lines[i++]));
+      out.push(h("div", { class: "tbl" }, h("table", null, h("thead", null, h("tr", null, head.map(c => h("th", null, mdInline(c))))),
+        h("tbody", null, rows.map(r => h("tr", null, head.map((_, j) => h("td", null, mdInline(r[j] ?? "")))))))));
+      continue;
+    }
+    if (/^\s*>/.test(l)) {
+      const body = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) body.push(lines[i++].replace(/^\s*>\s?/, ""));
+      out.push(h("blockquote", null, md(body.join("\n"))));
+      continue;
+    }
+    if (LIST.test(l)) {
+      // nested lists by indentation: a stack of [indent, list element]
+      const root = { kids: [] }, stack = [];
+      while (i < lines.length) {
+        const m = lines[i].match(LIST);
+        if (!m) {
+          // a continuation line of the item above (indented), or the end of the list
+          if (lines[i].trim() && /^\s+/.test(lines[i]) && stack.length) { const li = stack[stack.length - 1].li; li.append(h("br"), ...mdInline(lines[i].trim())); i++; continue; }
+          break;
+        }
+        const ind = m[1].replace(/\t/g, "    ").length, ordered = /\d/.test(m[2]);
+        while (stack.length && stack[stack.length - 1].ind > ind) stack.pop();
+        let top = stack[stack.length - 1];
+        if (!top || top.ind < ind) {
+          const list = h(ordered ? "ol" : "ul", ordered && +m[2].replace(/\D/g, "") !== 1 ? { start: m[2].replace(/\D/g, "") } : null);
+          if (top) top.li.append(list); else root.kids.push(list);
+          top = { ind, list, li: null }; stack.push(top);
+        }
+        const task = m[3].match(/^\[([ xX])\]\s+(.*)$/);
+        top.li = h("li", null, task ? [task[1] === " " ? "☐ " : "☑ ", mdInline(task[2])] : mdInline(m[3]));
+        top.list.append(top.li);
+        i++;
+      }
+      out.push(...root.kids);
+      continue;
+    }
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !LIST.test(lines[i]) && !/^\s*(```|~~~|#{1,6}\s|>)/.test(lines[i]) && !ROW(lines[i])) para.push(lines[i++]);
+    if (!para.length) para.push(lines[i++]);
+    out.push(h("p", null, withBreaks(para)));
+  }
+  return out;
+}
+
+// ---- a run's conversation or git diff, in one wide dialog ----
+function talkGroups(items) {
+  const groups = [];
+  for (const it of items) {
+    const ops = it.role === "tool" || it.role === "edit";
+    const last = groups[groups.length - 1];
+    if (ops && last?.ops) last.items.push(it); else groups.push(ops ? { ops: true, items: [it] } : it);
+  }
+  return groups;
+}
+function talkView(t, n) {
+  const who = { user: "あなた", assistant: "AI" };
+  return [h("div", { class: "talk" }, talkGroups(t.items).map(g => {
+    if (!g.ops) return h("div", { class: `msg ${g.role}` }, h("span", { class: "who" }, who[g.role], g.at && h("span", { class: "num" }, ` ${fmt(g.at)}`)),
+      g.role === "assistant" ? h("div", { class: "md" }, md(g.text)) : h("div", { class: "say" }, g.text));
+    const edits = g.items.filter(x => x.role === "edit").length, tools = g.items.length - edits;
+    return h("details", { class: "ops" }, h("summary", null, [tools > 0 && `${ICON.tool} 操作 ${tools}`, edits > 0 && `${ICON.edit} 編集 ${edits}`].filter(Boolean).join(" ・ ")),
+      // only files inside the project can be in its git diff; outside ones are absolute paths
+      g.items.map(x => x.role === "edit" && DLG.diff.has(n || {}) && !/^([A-Za-z]:|\/)/.test(x.text)
+        ? h("button", { class: "op edit", type: "button", title: "差分でこのファイルを見る", onclick: () => openDlg("diff", n.id, { file: x.text }) }, `${ICON.edit} ${x.text} → ${ICON.diff}`)
+        : h("div", { class: `op ${x.role}` }, x.role === "edit" ? `${ICON.edit} ${x.text}` : `${ICON.tool} ${x.text}`)));
+  })), t.truncated && h("div", { class: "hint" }, "長いので途中まで")];
+}
+function kanbanView(st) {
+  const tasks = st?.tasks || [];
+  const shown = fSection != null ? tasks.filter(t => t.section === fSection) : tasks;
+  const nextTask = st?.run?.next?.task;
+  if (!shown.length) return h("div", { class: "hint" }, fSection != null ? "このセクションのタスクはありません。" : "タスク（tasks）が書かれていません。");
+  return [
+    fSection != null && h("div", { class: "chips" }, h("span", { class: "hint" }, "セクションで絞り込み中"),
+      h("button", { class: "btn small filter", type: "button", "aria-pressed": "true", onclick: () => { fSection = null; render(); reopenDlg(); } }, `セクション: ${fSection} ✕`)),
+    h("div", { class: "kanboard" }, COLS.map(([k, name]) => { const items = shown.filter(t => t.column === k); return h("div", { class: "kcol" },
+      h("div", { class: "kcol-h" }, name, h("span", { class: "num" }, items.length)),
+      items.map(t => h("div", { class: `kcard col-${k}${fTask === t.id ? " hit" : ""}` },
+        h("div", { class: "kt" }, t.title),
+        h("div", { class: "km" }, nextTask === t.id && h("span", { class: "next-tag" }, "次"), t.section && h("span", { class: "tag" }, t.section),
+          h("button", { class: "btn small filter", type: "button", "aria-pressed": fTask === t.id ? "true" : "false",
+            onclick: () => { fTask = fTask === t.id ? null : t.id; render(); if (fTask) closeDlg(document.getElementById("dlg")); else reopenDlg(); } },
+            fTask === t.id ? "絞り込み中 ✕" : "履歴で見る")),
+        t.detail && h("details", null, h("summary", null, "くわしく"), h("p", null, t.detail))))); }))];
+}
+const DIFF_OPEN_LINES = 600;  // small diffs open every file at once
+function diffView(git, text) {
+  if (!git || text == null) return h("div", { class: "hint" }, "差分を読めませんでした。");
+  const base = { prev: "前の実行から", head: "最後のコミットから", empty: "最初から" }[git.base_kind] || "";
+  const files = splitPatch(text);
+  const openAll = files.reduce((a, f) => a + f.lines.length, 0) <= DIFF_OPEN_LINES;
+  const items = files.map(f => {
+    const g = git.files.find(x => x.path === f.path || f.path.endsWith(x.path)) || {};
+    const fd = h("details", { class: "diff-file" }, h("summary", null, h("code", { class: "grow path" }, f.path),
+      h("span", { class: "num", style: "font-size:12px;flex:none" }, h("span", { class: "plus" }, `+${g.add ?? "?"}`), " ", h("span", { class: "minus" }, `−${g.del ?? "?"}`))));
+    fd.addEventListener("toggle", () => { if (fd.open && !fd.querySelector("pre")) fd.append(patchPre(f.lines)); });
+    if (openAll) { fd.open = true; fd.append(patchPre(f.lines)); }
+    return fd;
+  });
+  const all = open => items.forEach(fd => { fd.open = open; if (open && !fd.querySelector("pre")) fd.dispatchEvent(new Event("toggle")); });
+  return [
+    h("div", { class: "row" }, h("span", { class: "hint grow" }, `${base}の変化`, git.branch ? `・ブランチ ${git.branch}` : "", git.truncated ? "・長いので途中まで" : ""),
+      files.length > 1 && h("button", { class: "btn small", type: "button", onclick: () => all(true) }, "すべて開く"),
+      files.length > 1 && h("button", { class: "btn small", type: "button", onclick: () => all(false) }, "すべて畳む")),
+    (git.commits || []).length > 0 && h("div", null, h("div", { class: "hint" }, "この間のコミット"), git.commits.map(c => h("div", { class: "row" }, h("code", null, c.hash), h("span", { class: "grow" }, c.subject)))),
+    items];
+}
+const DLG = {
+  talk: { has: x => x.talk > 0, icon: ICON.talk, name: "会話", label: n => [`${ICON.talk} 会話を読む`, h("span", { class: "cnt" }, h("span", { class: "num" }, n.talk), " 件")],
+    foot: `${ICON.edit} 編集は場所だけ。中身は「${ICON.diff} 差分」で見る。Esc で閉じる`,
+    load: async n => { const t = await src.talk(n.id); return t ? talkView(t, n) : h("div", { class: "hint" }, "会話を読めませんでした。"); } },
+  // a run that changed nothing in git has no diff to show
+  diff: { has: x => x.git?.files > 0, icon: ICON.diff, name: "差分", label: n => [`${ICON.diff} 差分を見る`, h("span", { class: "cnt" }, h("span", { class: "num" }, n.git.files), " ファイル ",
+      h("span", { class: "num plus" }, `+${n.git.add}`), " ", h("span", { class: "num minus" }, `−${n.git.del}`))],
+    foot: "git の写しどうしの差分。コミットしていない変更も入る。Esc で閉じる",
+    load: async n => { const [r, text] = await Promise.all([src.run(n.id), src.patch(n.id)]); return diffView(r?.git, text); } },
+  kanban: { has: () => true, icon: ICON.kanban, name: "カンバン", label: n => [`${ICON.kanban} カンバン`, h("span", { class: "cnt" }, h("span", { class: "num" }, n.kanban), " 件")],
+    foot: "その回の時点のタスク。「履歴で見る」でそのタスクを動かした回を履歴で光らせる。Esc で閉じる",
+    load: async n => kanbanView(n.id === "now" ? latest : String(n.id) === String(snap?.id) ? snap.status : (await src.run(n.id))?.status) },
+};
+const TABS = ["talk", "diff"];  // a run's conversation and its diff are read side by side
+const dlgButton = (kind, n) => h("button", { class: `btn dlg-open k-${kind}`, type: "button", onclick: () => openDlg(kind, n.id) }, DLG[kind].label(n));
+let dlgSeq = 0, dlgNow = null;
+const reopenDlg = () => { const dlg = document.getElementById("dlg"); if (dlg.open && dlgNow) openDlg(dlgNow.kind, dlgNow.id); };
+async function openDlg(kind, id, opt = {}) {
+  const K = DLG[kind], seq = ++dlgSeq;
+  const dlg = document.getElementById("dlg");
+  const list = nodes().filter(K.has), at = list.findIndex(x => String(x.id) === String(id)), n = list[at];
+  if (!n) return;
+  const go = d => { const m = list[at + d]; if (m) { choose(m.id === latestId() ? null : m.id); openDlg(kind, m.id); } };
+  const body = h("div", { class: "dlg-b" }, h("div", { class: "hint" }, "読み込み中…"));
+  dlg.dataset.kind = kind;
+  dlgNow = { kind, id: n.id };
+  const tabs = TABS.includes(kind) ? TABS.filter(k => DLG[k].has(n)) : [];
+  put(dlg,
+    h("div", { class: "dlg-h" }, tabs.length > 1
+      ? h("div", { class: "tabs", role: "tablist", id: "dlg-h", "aria-label": "見るもの" }, tabs.map(k => h("button", { class: "tab", type: "button", role: "tab",
+          "aria-selected": k === kind ? "true" : "false", onclick: () => k !== kind && openDlg(k, n.id) }, `${DLG[k].icon} ${DLG[k].name}`)))
+      : h("h2", { id: "dlg-h" }, `${K.icon} ${K.name}`),
+      h("span", { class: "t" }, mk(n.status), " ", h("span", { class: "num" }, fmt(n.finished_at)), " ", n.title),
+      h("button", { class: "btn small", type: "button", disabled: at <= 0 || null, onclick: () => go(-1) }, "◀ 前の回"),
+      h("button", { class: "btn small", type: "button", disabled: at >= list.length - 1 || null, onclick: () => go(1) }, "次の回 ▶"),
+      h("button", { class: "btn small", type: "button", onclick: () => closeDlg(dlg) }, "閉じる ✕")),
+    body,
+    h("div", { class: "dlg-f hint" }, K.foot));
+  if (!dlg.open) { dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", ""); }
+  const content = await K.load(n);
+  if (seq !== dlgSeq) return;  // another run was opened meanwhile
+  put(body, content);
+  body.scrollTop = 0;
+  if (opt.file) {
+    const want = opt.file.replace(/\\/g, "/");
+    const fd = [...body.querySelectorAll(".diff-file")].find(x => { const p = x.querySelector("code").textContent; return p === want || want.endsWith("/" + p) || p.endsWith("/" + want); });
+    if (!fd) { body.prepend(h("div", { class: "hint" }, `${want} はこの回の差分にありません（プロジェクトの外か、変化がなかったファイル）。`)); return; }
+    if (!fd.open) { fd.open = true; fd.dispatchEvent(new Event("toggle")); }
+    fd.classList.add("hit");
+    fd.scrollIntoView?.({ block: "start" });
+  }
+}
+function closeDlg(dlg) { dlg.close ? dlg.close() : dlg.removeAttribute("open"); }
+
 function splitPatch(text) {
   const files = [];
   for (const line of text.split("\n")) {
@@ -1768,7 +2389,7 @@ function renderNow() {
     kids.push(h("div", { class: "prog" },
       h("div", { class: "prog-h" }, h("b", null, "取り組み範囲: ", sec.title), h("span", { class: "num" }, `${done}/${sec.steps.length}`)),
       h("div", { class: "segs", role: "img", "aria-label": `${sec.steps.length} 段のうち ${done} 段が完了` }, sec.steps.map(x => h("span", { class: `seg ${x.state}`, title: `${STEP[x.state]} ${x.title}` }))),
-      h("div", { class: "chips" }, h("button", { class: "btn small", type: "button", "aria-pressed": fSection === sid ? "true" : "false",
+      h("div", { class: "chips" }, h("button", { class: "btn small filter", type: "button", "aria-pressed": fSection === sid ? "true" : "false",
         onclick: () => { fSection = fSection === sid ? null : sid; render(); } }, fSection === sid ? "絞り込み中 ✕" : "履歴をこの範囲で絞る"))));
   }
   if (tasks.length) {
@@ -1779,23 +2400,36 @@ function renderNow() {
         ["done", "review", "doing", "todo"].map(k => cnt[k] ? h("span", { class: `c-${k}`, style: `width:${cnt[k] / tasks.length * 100}%` }) : null)),
       h("div", { class: "legend" }, ["done", "review", "doing", "todo"].map(k => h("span", null, h("i", { class: `c-${k}` }), `${COLNAME[k]} `, h("b", { class: "num" }, cnt[k]))))));
   }
+  if (sec) kids.push(...ledgerBlock(sid));
   if (sec) kids.push(fold("steps", `段取り（${sec.steps.length}）`, sec.steps.map(x => h("div", { class: "row" }, h("span", { style: "flex:none" }, STEP[x.state]), h("span", { class: "grow", style: x.state === "doing" ? "font-weight:700" : null }, x.title)))));
   if (tasks.length) {
-    const shown = fSection != null ? tasks.filter(t => t.section === fSection) : tasks;
-    const nextTask = s.run.next?.task;
-    kids.push(fold("kanban", `カンバン（${fSection != null ? `${fSection} の ${shown.length}` : tasks.length} 件）`, h("div", { class: "kan" },
-      COLS.map(([k, name]) => { const items = shown.filter(t => t.column === k); return items.length ? h("div", { class: "kan" },
-        h("div", { class: "kcol-h" }, name, h("span", { class: "num" }, items.length)),
-        items.map(t => h("div", { class: `kcard col-${k}${fTask === t.id ? " hit" : ""}` },
-          h("div", { class: "kt" }, t.title),
-          h("div", { class: "km" }, nextTask === t.id && h("span", { class: "next-tag" }, "次"), t.section && h("span", { class: "tag" }, t.section),
-            h("button", { class: "btn small", type: "button", "aria-pressed": fTask === t.id ? "true" : "false",
-              onclick: () => { fTask = fTask === t.id ? null : t.id; render(); } }, fTask === t.id ? "絞り込み中 ✕" : "履歴で見る")),
-          t.detail && h("details", null, h("summary", null, "くわしく"), h("p", null, t.detail))))) : null; }),
-      !shown.length && h("div", { class: "hint" }, "このセクションのタスクはありません。"))));
+    const n = nodes().find(x => String(x.id) === String(snap.id)) || { id: snap.id };
+    kids.push(h("div", { class: "chips" }, dlgButton("kanban", { ...n, kanban: fSection != null ? tasks.filter(t => t.section === fSection).length : tasks.length })));
   }
   if (kids.length === 1) kids.push(h("p", { class: "hint" }, "取り組み範囲（section）もタスク（tasks）も書かれていません。"));
   put(el, ...kids);
+}
+
+// What this section did and left, up to the chosen run: done runs, moved to a task, dropped, left behind.
+function ledgerBlock(sid) {
+  const list = upToChosen(), inSec = list.filter(n => n.section_id === sid), items = leftovers(list, sid);
+  const by = k => items.filter(x => x.state === k);
+  const left = by("left"), toTask = by("task"), dropped = by("drop");
+  const later = Object.fromEntries(leftovers(nodes()).map(x => [x.title, x]));  // looking back: where it went afterwards
+  if (!inSec.length) return [];
+  const group = (name, xs, row) => xs.length > 0 && [h("div", { class: "ledger-h" }, `${name}（${xs.length}）`), xs.map(row)];
+  const why = x => x.reason && h("span", { class: "why" }, ` — ${x.reason}`);
+  return [
+    left.length > 0 && h("div", { class: "chips" }, h("span", { class: "tag d-left" }, `${ICON.left} この範囲の置き去り `, h("b", { class: "num" }, left.length)),
+      h("span", { class: "hint" }, "行き先（タスクか見送り）が決まっていない")),
+    fold("ledger", `${ICON.ledger} この範囲の記録（${inSec.length} 回）`, [
+      group(`${ICON.left} 置き去り（行き先未定）`, left, x => h("div", { class: "row lrow" }, h("span", { class: "grow" }, x.title, why(x)),
+        later[x.title]?.state !== "left" && destTag(x, later[x.title]), h("span", { class: "tag num" }, fmt(x.run.finished_at)), goRun(x.run))),
+      group(`→ ${ICON.kanban} 続きはタスクへ`, toTask, x => h("div", { class: "row lrow" }, h("span", { class: "grow" }, x.title), destTag(x))),
+      group(`${ICON.drop} やらないと決めた`, dropped, x => h("div", { class: "row lrow" }, h("span", { class: "grow" }, x.title, why(x)))),
+      group(`${ICON.did} した回`, inSec, n => h("div", { class: "row lrow" }, mk(n.status), h("span", { class: "grow" }, n.title), h("span", { class: "tag num" }, fmt(n.finished_at)), goRun(n))),
+    ]),
+  ];
 }
 
 // ---- future: next and questions ----

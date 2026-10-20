@@ -1,11 +1,17 @@
-"""Set up ResponseBoard for Claude Code in another project.
+"""Set up ResponseBoard for Claude Code, for every folder (user) or for one project.
 
-  python hooks/install_claude.py <project folder> [--name NAME]
+  python hooks/install_claude.py --scope user                 every folder, minus the deny list
+  python hooks/install_claude.py --scope project <folder>     one project [--name NAME]
+  add --uninstall to take it out again (the history and .responseboard/ folders are kept)
 
 Safe to run again: each step is skipped when already done.
-  1. .claude/settings.local.json  hooks (UserPromptSubmit, Stop) and statusLine pointing at this
-                                  checkout by absolute path. local = this machine only, not shared.
-                                  An existing statusLine is left alone.
+
+user (~/.claude/settings.json, or $CLAUDE_CONFIG_DIR/settings.json):
+  1. hooks SessionStart (gives Claude the rules), UserPromptSubmit, Stop, and statusLine,
+     merged into the existing settings. An existing statusLine is left alone.
+  2. the deny list %USERPROFILE%/.responseboard/ignore (created with comments if missing)
+project:
+  1. .claude/settings.local.json  hooks (UserPromptSubmit, Stop) and statusLine. local = this machine only.
   2. CLAUDE.md                    a ResponseBoard section between markers (file created if missing)
   3. .gitignore                   ".responseboard/" (only if the project has a .gitignore)
   4. .responseboard/status.json   a first "done" run, recorded, so the project appears on the board
@@ -14,75 +20,82 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 RB_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RB_ROOT / "src"))
 
+from claude_rules import END, START, posix, rules  # noqa: E402
 from responseboard import cli  # noqa: E402
+from responseboard import ignore  # noqa: E402
 from responseboard import status as st  # noqa: E402
 
-START, END = "<!-- responseboard:start -->", "<!-- responseboard:end -->"
+HOOK = posix(RB_ROOT / "hooks" / "rb_hook.py")
+LINE = posix(RB_ROOT / "hooks" / "rb_statusline.py")
+EVENTS = {
+    "project": (("UserPromptSubmit", "prompt", "ResponseBoard: 開始時刻を記録"),
+                ("Stop", "stop", "ResponseBoard: status.json を確認")),
+    "user": (("SessionStart", "session --global", "ResponseBoard: 決まりを渡す"),
+             ("UserPromptSubmit", "prompt --global", "ResponseBoard: 開始時刻を記録"),
+             ("Stop", "stop --global", "ResponseBoard: status.json を確認")),
+}
 
 
-def posix(p: Path) -> str:
-    return str(p).replace("\\", "/")
+def user_settings() -> Path:
+    base = os.environ.get("CLAUDE_CONFIG_DIR")
+    return (Path(base) if base else Path.home() / ".claude") / "settings.json"
 
 
-def hook_cmd(arg: str) -> str:
-    return f'python "{posix(RB_ROOT / "hooks" / "rb_hook.py")}" {arg}'
-
-
-def rules() -> str:
-    schema, sample = posix(RB_ROOT / "schema" / "status.schema.json"), posix(RB_ROOT / "samples" / "status.sample.json")
-    return f"""{START}
-## 毎回の終わりに `.responseboard/status.json` を書く（ResponseBoard）
-
-返事を終える前に、毎回 `.responseboard/status.json` を書き直す。形は `{schema}`、例は `{sample}`。
-書いていない・古い・形が違うと Stop フックが一度だけ止めて理由を返すので、直してから終える。
-結果はステータスラインと、手元のボード（`{posix(RB_ROOT / "scripts" / "rb.cmd")} serve --open`）に出る。
-
-- `run.title` は 40 字まで。したことを 1 行で
-- `run.summary` は 120 字まで。長い説明は `run.notes` に入れる
-- `run.asks` には、ユーザーの判断が要ることだけを入れる（選択肢 2〜4 個）。あれば `run.status` は `needs_you`、なければ空にする
-- `run.checks` に確かめたこと（pass / fail / skip）、`run.changes` に変えたファイルを入れる
-- `run.not_done` に今回しなかったこと・できなかったことと理由（`title` 60 字・`reason` 120 字）
-- `run.next` に次に取りかかること（`title` 40 字・`detail` 400 字・`steps` 最初の手順 8 つまで・`task` は tasks の id）。
-  会話を読み返さずに再開できるように、何をするか・なぜ次か・終わりの条件を書く。ボードでは信号のすぐ下に出る
-- `section` は今取り組んでいる範囲の段取り、`tasks` はプロジェクト全体のカンバン（todo / doing / review / done）。
-  前回の `status.json` を引き継いで、進んだ所だけ直す。各項目の `detail`（400 字）に、何をするかと終わりの条件を書く
-- セクションはプロジェクトに何個もあり、履歴はセクションごとにまとまる。別の範囲に移ったら `section` を新しくする。
-  `section.id` を省くと題の「:」の前が id になる。`tasks[].section` にはこの id を書く
-- git の差分は rb が記録するので書かない
-- `source.tool` は `claude-code`、`source.written_by` は `llm`
-- `history` はフックが履歴のデータベースから埋めるので書かない
-- `run.finished_at` は `+09:00` 付きの ISO 8601
-{END}"""
-
-
-def install_settings(proj: Path) -> str:
-    path = proj / ".claude" / "settings.local.json"
+def install_settings(path: Path, scope: str) -> str:
     d = st.read_json(path) if path.exists() else {}
     hooks = d.setdefault("hooks", {})
     added = []
-    for event, arg, msg in (("UserPromptSubmit", "prompt", "ResponseBoard: 開始時刻を記録"),
-                            ("Stop", "stop", "ResponseBoard: status.json を確認")):
-        cmd = hook_cmd(arg)
+    for event, arg, msg in EVENTS[scope]:
+        cmd = f'python "{HOOK}" {arg}'
         groups = hooks.setdefault(event, [])
         if any(h.get("command") == cmd for g in groups for h in g.get("hooks", [])):
             continue
         groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": 10, "statusMessage": msg}]})
         added.append(event)
     if "statusLine" not in d:
-        d["statusLine"] = {"type": "command", "command": f'python "{posix(RB_ROOT / "hooks" / "rb_statusline.py")}"',
-                           "refreshInterval": 5}
+        d["statusLine"] = {"type": "command", "command": f'python "{LINE}"', "refreshInterval": 5}
         added.append("statusLine")
-    elif "rb_statusline.py" not in d["statusLine"].get("command", ""):
-        added.append("statusLine skipped: the project already has its own")
     if added:
         st.write_json(path, d)
-    return f"{path}: " + (", ".join(added) if added else "already set up")
+    msg = ", ".join(added) if added else "already set up"
+    if LINE not in d["statusLine"].get("command", ""):
+        msg += "; statusLine skipped: there is one already"
+    return f"{path}: {msg}"
+
+
+def uninstall_settings(path: Path) -> str:
+    if not path.exists():
+        return f"{path}: none"
+    d = st.read_json(path)
+    removed = []
+    hooks = d.get("hooks", {})
+    for event in list(hooks):
+        groups = []
+        for g in hooks[event]:
+            keep = [h for h in g.get("hooks", []) if HOOK not in h.get("command", "")]
+            if len(keep) != len(g.get("hooks", [])):
+                removed.append(event)
+            if keep:
+                groups.append({**g, "hooks": keep})
+        if groups:
+            hooks[event] = groups
+        else:
+            del hooks[event]
+    if "hooks" in d and not hooks:
+        del d["hooks"]
+    if LINE in d.get("statusLine", {}).get("command", ""):
+        del d["statusLine"]
+        removed.append("statusLine")
+    if removed:
+        st.write_json(path, d)
+    return f"{path}: " + (f"removed {', '.join(removed)}" if removed else "nothing of ResponseBoard")
 
 
 def install_rules(proj: Path) -> str:
@@ -98,6 +111,21 @@ def install_rules(proj: Path) -> str:
     if new != text:
         path.write_text(new, encoding="utf-8", newline="\n")
     return f"{path}: {what}"
+
+
+def uninstall_rules(proj: Path) -> str:
+    path = proj / "CLAUDE.md"
+    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    if START not in text:
+        return f"{path}: no section"
+    head, rest = text.split(START, 1)
+    tail = rest.split(END, 1)[1] if END in rest else ""
+    new = (head.rstrip("\n") + "\n\n" + tail.lstrip("\n")).strip("\n")
+    if not new:
+        path.unlink()
+        return f"{path}: removed (it had only the ResponseBoard section)"
+    path.write_text(new + "\n", encoding="utf-8", newline="\n")
+    return f"{path}: section removed"
 
 
 def install_gitignore(proj: Path) -> str:
@@ -121,19 +149,40 @@ def seed(proj: Path, name: str | None) -> str:
     return f"{st.status_path(proj)}: first run recorded"
 
 
+def deny_list() -> str:
+    existed = ignore.path().exists()
+    f = ignore.ensure_file()
+    return f"{f}: " + ("kept" if existed else "created (add folders to skip, one per line)")
+
+
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="Set up ResponseBoard for Claude Code in a project.")
-    p.add_argument("project")
+    p = argparse.ArgumentParser(description="Set up ResponseBoard for Claude Code.")
+    p.add_argument("project", nargs="?", help="the project folder (scope project)")
+    p.add_argument("--scope", choices=("user", "project"), default="project",
+                   help="user = every folder except the deny list; project = only this folder (default)")
     p.add_argument("--name", help="project name on the board (default: folder name)")
+    p.add_argument("--uninstall", action="store_true", help="take ResponseBoard out again")
     a = p.parse_args(argv)
-    proj = Path(a.project).resolve()
-    if not proj.is_dir():
-        print(f"error: {proj} is not a folder", file=sys.stderr)
-        return 1
-    if proj == RB_ROOT:
-        print("error: ResponseBoard itself uses .claude/settings.json; nothing to install", file=sys.stderr)
-        return 1
-    for line in (install_settings(proj), install_rules(proj), install_gitignore(proj), seed(proj, a.name)):
+    if a.scope == "user":
+        if a.project:
+            p.error("--scope user takes no folder")
+        lines = ([uninstall_settings(user_settings())] if a.uninstall
+                 else [install_settings(user_settings(), "user"), deny_list()])
+    else:
+        if not a.project:
+            p.error("--scope project needs the project folder")
+        proj = Path(a.project).resolve()
+        if not proj.is_dir():
+            print(f"error: {proj} is not a folder", file=sys.stderr)
+            return 1
+        if proj == RB_ROOT:
+            print("error: ResponseBoard itself uses .claude/settings.json; nothing to install", file=sys.stderr)
+            return 1
+        settings = proj / ".claude" / "settings.local.json"
+        lines = ([uninstall_settings(settings), uninstall_rules(proj)] if a.uninstall
+                 else [install_settings(settings, "project"), install_rules(proj), install_gitignore(proj),
+                       seed(proj, a.name)])
+    for line in lines:
         sys.stdout.buffer.write((line + "\n").encode("utf-8"))
     return 0
 

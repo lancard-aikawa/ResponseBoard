@@ -72,7 +72,7 @@ class ServerTest(unittest.TestCase):
         self.assertNotIn("raw_json", ov[0])
         run = self.get_json(f"/api/run?id={ov[1]['id']}&" + q)
         self.assertEqual((run["status"]["run"]["title"], run["git"]), ("first", None))
-        for url, code in ((f"/api/diff?id={ov[0]['id']}&", 404), ("/api/run?id=x&", 400), ("/api/run?id=99999&", 404)):
+        for url, code in ((f"/api/diff?id={ov[0]['id']}&", 404), (f"/api/talk?id={ov[0]['id']}&", 404), ("/api/run?id=x&", 400), ("/api/run?id=99999&", 404)):
             with self.assertRaises(urllib.error.HTTPError) as cm:
                 self.get(url + q)
             self.assertEqual(cm.exception.code, code, url)

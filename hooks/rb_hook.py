@@ -1,11 +1,16 @@
 """ResponseBoard hooks for Claude Code (the Claude adapter; the core is src/responseboard).
 
+  rb_hook.py session  (SessionStart) gives Claude the rules, unless CLAUDE.md already has them.
   rb_hook.py prompt   (UserPromptSubmit) records when the turn started.
   rb_hook.py stop     (Stop) checks that .responseboard/status.json was written
                       during this turn and is valid. If not, it blocks the stop
                       once and tells Claude what to fix. On success the run is
                       added to the history database and status.json "history"
                       is filled from it.
+
+All of them do nothing in a folder on the deny list (src/responseboard/ignore.py).
+"--global" marks the hooks installed for every folder: they also stand aside when the
+project has its own ResponseBoard hooks, so nothing runs twice.
 
 Standard library only. Reads the hook payload as JSON on stdin.
 """
@@ -21,6 +26,9 @@ from pathlib import Path
 RB_ROOT = Path(__file__).resolve().parent.parent  # the ResponseBoard checkout, wherever the project is
 sys.path.insert(0, str(RB_ROOT / "src"))
 
+from claude_rules import START, rules  # noqa: E402
+from claude_transcript import turn_talk  # noqa: E402
+from responseboard import ignore  # noqa: E402
 from responseboard import status as st  # noqa: E402
 from responseboard import store  # noqa: E402
 
@@ -38,9 +46,36 @@ def block(reason: str) -> None:
     emit({"decision": "block", "reason": reason})
 
 
+def skipped(root: Path, is_global: bool) -> bool:
+    if ignore.match(root):
+        return True
+    if not is_global:
+        return False
+    for name in ("settings.json", "settings.local.json"):
+        f = root / ".claude" / name
+        try:
+            if "rb_hook.py" in f.read_text(encoding="utf-8"):
+                return True  # the project's own hooks do the work
+        except OSError:
+            pass
+    return False
+
+
+def cmd_session(payload: dict) -> None:
+    try:
+        if START in (project_root(payload) / "CLAUDE.md").read_text(encoding="utf-8"):
+            return
+    except OSError:
+        pass
+    emit({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": rules()}})
+
+
 def cmd_prompt(payload: dict) -> None:
     bd = project_root(payload) / ".responseboard"
-    bd.mkdir(exist_ok=True)
+    if not bd.exists():
+        bd.mkdir()
+        # git leaves the folder alone without touching the project's own .gitignore
+        (bd / ".gitignore").write_text("*\n", encoding="utf-8", newline="\n")
     st.write_json(bd / "turn.json", {"started_at": time.time(), "session_id": payload.get("session_id")})
 
 
@@ -55,14 +90,15 @@ def cmd_stop(payload: dict) -> None:
     path = st.status_path(root)
     how = ("Before finishing, write .responseboard/status.json for this turn "
            f"(shape: {RB_ROOT / 'schema' / 'status.schema.json'}, example: {RB_ROOT / 'samples' / 'status.sample.json'}; "
-           "rules in CLAUDE.md). ").replace("\\", "/")
+           "rules in CLAUDE.md or given at session start). ").replace("\\", "/")
     if not path.exists():
         return block(how + "The file does not exist yet.")
     # 2 s slack: on Windows the file time and time.time() can disagree by a few ms to a tick.
     if path.stat().st_mtime < started - 2:
         return block(how + "The file was not updated during this turn.")
     try:
-        errs, _ = store.record_file(root, default_writer="llm")
+        talk = turn_talk(payload["transcript_path"], started, root) if payload.get("transcript_path") else None
+        errs, _ = store.record_file(root, default_writer="llm", talk=talk)
     except sqlite3.Error as e:
         # The run itself is fine; only the history could not be saved. Do not block the user.
         return emit({"systemMessage": f"ResponseBoard: history database error ({e}); status.json was not recorded."})
@@ -73,7 +109,9 @@ def cmd_stop(payload: dict) -> None:
 def main() -> int:
     raw = sys.stdin.buffer.read().decode("utf-8") or "{}"
     payload = json.loads(raw)
-    {"prompt": cmd_prompt, "stop": cmd_stop}[sys.argv[1]](payload)
+    if skipped(project_root(payload), "--global" in sys.argv[2:]):
+        return 0
+    {"session": cmd_session, "prompt": cmd_prompt, "stop": cmd_stop}[sys.argv[1]](payload)
     return 0
 
 

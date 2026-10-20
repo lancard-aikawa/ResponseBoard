@@ -22,8 +22,9 @@ def main() -> int:
     ws = payload.get("workspace") or {}
     root = Path(ws.get("project_dir") or os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd())
     try:
+        from responseboard import ignore
         from responseboard.statusline import line
-        text = line(root)
+        text = "" if ignore.match(root) else line(root)
     except Exception as e:  # noqa: BLE001 - the status bar must always show something
         text = f"ResponseBoard: {type(e).__name__}"
     sys.stdout.buffer.write(text.encode("utf-8"))
