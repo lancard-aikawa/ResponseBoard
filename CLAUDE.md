@@ -41,7 +41,8 @@ LLM の作業結果を、長い最終応答を読まずに一目で分かるよ�
 
 ## git
 
-- 2026-10-20 に `git init` した。`.responseboard/` は追跡しない（毎回書き換わり、差分の写しからも外している）
+- 2026-10-20 に `git init` し、同じ日に https://github.com/lancard-aikawa/ResponseBoard へ公開した（public）。
+  公開されるので、個人のパス・メールアドレス・本物の runs.db の中身を入れない。`.responseboard/` は追跡しない（毎回書き換わり、差分の写しからも外している）
 - 改行は `.gitattributes` で LF にそろえる。`.cmd` / `.bat` / `.ps1` だけ CRLF
 
 ## 気を付けること
