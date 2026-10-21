@@ -37,7 +37,7 @@ LLM の作業結果を、長い最終応答を読まずに一目で分かるよ�
 
 ## 確かめ方
 
-- 本体・フック・配信: `python -m unittest tests.test_hook tests.test_rb tests.test_server tests.test_statusline tests.test_install tests.test_git tests.test_scope tests.test_talk tests.test_codex -v`
+- 本体・フック・配信: `python -m unittest tests.test_hook tests.test_rb tests.test_server tests.test_statusline tests.test_install tests.test_git tests.test_scope tests.test_talk tests.test_codex tests.test_extract -v`
 - ボードの見本: `python scripts/make_sample.py`（一時的な git リポジトリで 7 回分を本当に記録し、`samples/board.sample.json` とボードに埋め込む）
 - 画面: `scripts\rb.cmd serve` を動かし、Playwright で http://127.0.0.1:28000/ を開く（スクリーンショットは `.playwright-mcp/` に保存する）
 - ボード: `npm test`（jsdom で全タブを描く）

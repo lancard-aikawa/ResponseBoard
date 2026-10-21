@@ -32,6 +32,7 @@ rb ask "公開の確認" --ask "公開しますか？|*はい|いいえ"    # * 
 rb running "変換中"                                        # 実行中。終わるまで記録しない
 rb record [--talk 会話.json]                               # LLM が書いた status.json を記録する
 rb check                                                   # 形だけ確かめる
+rb extract [最終応答.md] [--tool 道具]                       # 最終応答からローカル LLM で下書きを作って記録する（下）
 rb history                      # このフォルダの履歴
 rb history --all --status failed --limit 50                # 全プロジェクトの失敗
 rb history --json
@@ -44,6 +45,25 @@ rb ignore [--remove | --list]                              # 外す一覧にこ�
 
 どれも今いるフォルダ（`--dir` で変えられる）の `.responseboard/status.json` を扱う。
 `done` / `fail` / `ask` は、前の `status.json` の `section` と `tasks`（カンバン）を引き継ぐ。
+
+### 最終応答から抜き出す（rb extract）
+
+`status.json` を書かない LLM や道具のために、最終応答の文（ファイルか標準入力）をローカル LLM に読ませて、
+その回の下書き（状態・題・要約・質問・確認・残したこと・次にやること）を作り、記録する。
+
+```powershell
+Get-Content answer.md -Raw | rb extract --tool aider       # 記録まで
+rb extract answer.md --no-record                           # status.json を書くだけ
+```
+
+- LLM は OpenAI 互換の口（`/chat/completions`）で呼ぶ。Ollama・llama.cpp の llama-server・LM Studio のどれでもよい。
+  場所は `RESPONSEBOARD_LLM_URL`（既定 `http://127.0.0.1:11434/v1` = Ollama）、モデルは `RESPONSEBOARD_LLM_MODEL`（既定 `gemma4:e2b`）
+- `source.written_by` は `extractor`。最終応答そのものはその回の「会話」に残すので、ボードで下書きと見比べられる
+- モデルの出力は字数・選択肢の数を整えてから書くので、`rb check` を必ず通る。質問があれば `needs_you` にする
+- 題と要約に、元の文に無い数字があれば警告し、説明に書く（小さいモデルは数字を落としたり変えたりする）
+- 2026-10-21 の試し（RTX 3050 6GB、Ollama）: gemma4:e2b は 1 回目が読み込み込みで約 70 秒、続けてなら約 17 秒。
+  qwen3:4b-instruct は速い（約 10 秒）が、「117 何件」のように余計な漢字が混ざり、「まだコミットしていない」を残したことに入れなかった。
+  速くしたいなら、gemma4:e2b を llama.cpp（SSD から読み込み約 3.5 秒）で動かして `RESPONSEBOARD_LLM_URL` をそちらに向ける
 
 ## 入れる（Claude Code）
 

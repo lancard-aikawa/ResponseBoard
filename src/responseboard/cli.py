@@ -6,6 +6,7 @@
   rb fail TITLE [--summary S]   write a "failed" run and record it
   rb running TITLE              write a "running" run (not recorded until it ends)
   rb ask TITLE --ask "Q|*A|B"   write a "needs you" run; * marks the recommended option
+  rb extract [FILE]             draft a run from an LLM's final answer (FILE, or stdin) with a local LLM and record it
   rb history [--all] [--status S] [--tool T] [--limit N] [--json]
   rb import-jsonl FILE          add runs from an old history.jsonl
   rb serve [--port N] [--open]  show the board in a local browser (http://127.0.0.1:28000/)
@@ -117,6 +118,50 @@ def cmd_record(args) -> int:
     return 0
 
 
+def cmd_extract(args) -> int:
+    from . import extract
+    root = Path(args.dir)
+    try:
+        answer = (sys.stdin.buffer.read().decode("utf-8") if args.file in (None, "-")
+                  else Path(args.file).read_text(encoding="utf-8")).strip()
+    except OSError as e:
+        err(f"error: {e}")
+        return 1
+    if not answer:
+        err("error: the answer is empty")
+        return 1
+    path = st.status_path(root)
+    try:
+        prev = st.read_json(path)
+    except (FileNotFoundError, ValueError):
+        prev = {}
+    project = {"name": args.project or (prev.get("project") or {}).get("name") or root.name, "path": st.norm_path(root)}
+    url, model = extract.settings()
+    try:
+        d, warnings = extract.draft(answer, prev, project, args.tool, args.url or url, args.model or model)
+    except extract.ExtractError as e:
+        err(f"error: {e}")
+        return 1
+    for w in warnings:
+        err(f"warning: {w}")
+    errs = st.validate(d)
+    if errs:  # to_run keeps to the limits, so this means a bug there
+        for e in errs:
+            err(f"error: {e}")
+        return 1
+    st.write_json(path, d)
+    if args.no_record:
+        out(f"{MARK[d['run']['status']]} {d['run']['title']}  (written, not recorded)")
+        return 0
+    errs, inserted = store.record_file(root, default_writer="extractor", talk=[{"role": "assistant", "text": answer}])
+    for e in errs:
+        err(f"error: {e}")
+    if errs:
+        return 1
+    out(f"{MARK[d['run']['status']]} {d['run']['title']}  ({'recorded' if inserted else 'already recorded'})")
+    return 0
+
+
 def cmd_history(args) -> int:
     con = store.connect()
     try:
@@ -223,6 +268,13 @@ def main(argv: list[str] | None = None) -> int:
         sp.add_argument("--project", help="project name (default: kept from status.json or the folder name)")
         if name == "ask":
             sp.add_argument("--ask", action="append", required=True, metavar='"QUESTION|*OPTION|OPTION"')
+    ex = sub.add_parser("extract", help="draft a run from an LLM's final answer with a local LLM, and record it")
+    ex.add_argument("file", nargs="?", help="the answer as a text file (default: stdin)")
+    ex.add_argument("--tool", default="unknown", help="the LLM tool that wrote the answer (default: unknown)")
+    ex.add_argument("--project", help="project name (default: kept from status.json or the folder name)")
+    ex.add_argument("--url", help="OpenAI-compatible endpoint (default: $RESPONSEBOARD_LLM_URL or Ollama)")
+    ex.add_argument("--model", help="model name (default: $RESPONSEBOARD_LLM_MODEL or gemma4:e2b)")
+    ex.add_argument("--no-record", action="store_true", help="only write status.json")
     h = sub.add_parser("history", help="list recorded runs")
     h.add_argument("--all", action="store_true", help="all projects, not only this folder")
     h.add_argument("--status", choices=sorted(st.RUN_STATUS))
@@ -255,5 +307,5 @@ def main(argv: list[str] | None = None) -> int:
         from .server import serve
         serve(args.port, args.open)
         return 0
-    return {"check": cmd_check, "record": cmd_record, "history": cmd_history, "left": cmd_left, "import-jsonl": cmd_import,
+    return {"check": cmd_check, "record": cmd_record, "history": cmd_history, "left": cmd_left, "import-jsonl": cmd_import, "extract": cmd_extract,
             "ignore": cmd_ignore}[args.cmd](args)
