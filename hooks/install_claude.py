@@ -48,24 +48,29 @@ def user_settings() -> Path:
     return (Path(base) if base else Path.home() / ".claude") / "settings.json"
 
 
-def install_settings(path: Path, scope: str) -> str:
+RULES_FILE = {"claude-code": "CLAUDE.md", "codex": "AGENTS.md"}
+
+
+def install_settings(path: Path, scope: str, tool: str = "claude-code") -> str:
+    """Hooks in a Claude settings.json, or a Codex hooks.json (the same "hooks" shape, no statusLine)."""
     d = st.read_json(path) if path.exists() else {}
     hooks = d.setdefault("hooks", {})
     added = []
     for event, arg, msg in EVENTS[scope]:
-        cmd = f'python "{HOOK}" {arg}'
+        cmd = f'python "{HOOK}" {arg}' + (f" --tool {tool}" if tool != "claude-code" else "")
         groups = hooks.setdefault(event, [])
         if any(h.get("command") == cmd for g in groups for h in g.get("hooks", [])):
             continue
         groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": 10, "statusMessage": msg}]})
         added.append(event)
-    if "statusLine" not in d:
+    if tool == "claude-code" and "statusLine" not in d:
         d["statusLine"] = {"type": "command", "command": f'python "{LINE}"', "refreshInterval": 5}
         added.append("statusLine")
     if added:
+        path.parent.mkdir(parents=True, exist_ok=True)
         st.write_json(path, d)
     msg = ", ".join(added) if added else "already set up"
-    if LINE not in d["statusLine"].get("command", ""):
+    if tool == "claude-code" and LINE not in d["statusLine"].get("command", ""):
         msg += "; statusLine skipped: there is one already"
     return f"{path}: {msg}"
 
@@ -98,23 +103,23 @@ def uninstall_settings(path: Path) -> str:
     return f"{path}: " + (f"removed {', '.join(removed)}" if removed else "nothing of ResponseBoard")
 
 
-def install_rules(proj: Path) -> str:
-    path = proj / "CLAUDE.md"
+def install_rules(proj: Path, tool: str = "claude-code") -> str:
+    path = proj / RULES_FILE[tool]
     text = path.read_text(encoding="utf-8") if path.exists() else ""
     if START in text:
         head, rest = text.split(START, 1)
-        new = head + rules() + rest.split(END, 1)[1]
+        new = head + rules(tool) + rest.split(END, 1)[1]
         what = "section updated" if new != text else "already set up"
     else:
-        new = (text.rstrip("\n") + "\n\n" if text else "") + rules() + "\n"
+        new = (text.rstrip("\n") + "\n\n" if text else "") + rules(tool) + "\n"
         what = "section added" if text else "created"
     if new != text:
         path.write_text(new, encoding="utf-8", newline="\n")
     return f"{path}: {what}"
 
 
-def uninstall_rules(proj: Path) -> str:
-    path = proj / "CLAUDE.md"
+def uninstall_rules(proj: Path, tool: str = "claude-code") -> str:
+    path = proj / RULES_FILE[tool]
     text = path.read_text(encoding="utf-8") if path.exists() else ""
     if START not in text:
         return f"{path}: no section"

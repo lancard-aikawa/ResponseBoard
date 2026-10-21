@@ -29,7 +29,7 @@ LLM の作業結果を、長い最終応答を読まずに一目で分かるよ�
 
 ## つくりの決まり
 
-- 本体 `src/responseboard/` は LLM に依らず、標準ライブラリだけで書く。Claude 固有のことは `hooks/` に閉じ込める
+- 本体 `src/responseboard/` は LLM に依らず、標準ライブラリだけで書く。Claude や Codex 固有のことは `hooks/` に閉じ込める
 - 入れ方は全体（`--scope user`）と個別（`--scope project`）。全体はどこでも動き、外す一覧（`ignore.py`）だけ除く。
   Claude に渡す決まりの文は `hooks/claude_rules.py` の 1 か所に置く
 - LLM には SQLite を直接書かせない。書く口は `status.json` だけにして、記録は rb（`store.record_file`）が行う
@@ -37,7 +37,7 @@ LLM の作業結果を、長い最終応答を読まずに一目で分かるよ�
 
 ## 確かめ方
 
-- 本体・フック・配信: `python -m unittest tests.test_hook tests.test_rb tests.test_server tests.test_statusline tests.test_install tests.test_git tests.test_scope tests.test_talk -v`
+- 本体・フック・配信: `python -m unittest tests.test_hook tests.test_rb tests.test_server tests.test_statusline tests.test_install tests.test_git tests.test_scope tests.test_talk tests.test_codex -v`
 - ボードの見本: `python scripts/make_sample.py`（一時的な git リポジトリで 7 回分を本当に記録し、`samples/board.sample.json` とボードに埋め込む）
 - 画面: `scripts\rb.cmd serve` を動かし、Playwright で http://127.0.0.1:28000/ を開く（スクリーンショットは `.playwright-mcp/` に保存する）
 - ボード: `npm test`（jsdom で全タブを描く）
@@ -66,5 +66,7 @@ LLM の作業結果を、長い最終応答を読まずに一目で分かるよ�
   書くなら `running` にする（記録されない）
 - Playwright の窓はユーザーにも見えている。スマホの幅（390px）で確かめたら、終わる前に 1280px へ戻す
   （2026-10-20、戻し忘れて「スマホ表示みたいに狭くなった」と言われた）
+- 画面を確かめるために `rb serve` を起動したら、確かめたあとも止めない。止めると、ユーザーが開いているボードが落ちる
+  （2026-10-21、確認のあとで止めて「28000 が落ちている」と言われた）。止めるのは、ユーザーが自分で起動したと分かっているときだけ
 - 「今回の作業中に書かれたか」を時刻で比べるときは 2 秒の余裕を持たせる。Windows ではファイルの時刻と time.time() がずれ、
   テストがときどき落ちた（2026-10-19）

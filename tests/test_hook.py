@@ -72,7 +72,18 @@ class HookTest(unittest.TestCase):
 
     def test_stop_hook_active_never_blocks(self):
         self.run_hook("prompt")
+        out = self.run_hook("stop", stop_hook_active=True)
+        self.assertNotEqual(out.get("decision"), "block")
+        self.assertIn("not recorded", out["systemMessage"])
+
+    def test_the_fix_after_a_block_is_recorded(self):
+        # the Stop after the fix comes with stop_hook_active; it used to return before recording (2026-10-21)
+        self.run_hook("prompt")
+        self.assertEqual(self.run_hook("stop", stop_hook_active=False)["decision"], "block")
+        self.bd.mkdir(exist_ok=True)
+        self.write_status(self.sample())
         self.assertIsNone(self.run_hook("stop", stop_hook_active=True))
+        self.assertEqual(len(self.rows()), 1)
 
     def test_rb_stamps_time_and_id(self):
         # an LLM does not know the time: a guessed finished_at outside the turn is replaced, a missing one filled

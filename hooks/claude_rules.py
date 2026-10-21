@@ -1,4 +1,7 @@
-"""The ResponseBoard rules for Claude, shared by the installer (CLAUDE.md) and the SessionStart hook."""
+"""The ResponseBoard rules given to the LLM, shared by the installers (CLAUDE.md / AGENTS.md) and the SessionStart hook.
+
+Written for Claude Code first; tool="codex" changes the few lines that differ for Codex.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,14 +14,14 @@ def posix(p: Path) -> str:
     return str(p).replace("\\", "/")
 
 
-def rules() -> str:
+def rules(tool: str = "claude-code") -> str:
     schema, sample = posix(RB_ROOT / "schema" / "status.schema.json"), posix(RB_ROOT / "samples" / "status.sample.json")
     return f"""{START}
 ## 毎回の終わりに `.responseboard/status.json` を書く（ResponseBoard）
 
 返事を終える前に、毎回 `.responseboard/status.json` を書き直す。形は `{schema}`、例は `{sample}`。
 書いていない・古い・形が違うと Stop フックが一度だけ止めて理由を返すので、直してから終える。
-結果はステータスラインと、手元のボード（`{posix(RB_ROOT / "scripts" / "rb.cmd")} serve --open`）に出る。
+結果は{"ステータスラインと、" if tool == "claude-code" else ""}手元のボード（`{posix(RB_ROOT / "scripts" / "rb.cmd")} serve --open`）に出る。
 
 - `run.title` は 40 字まで。したことを 1 行で
 - `run.summary` は 120 字まで。長い説明は `run.notes` に入れる
@@ -36,7 +39,7 @@ def rules() -> str:
 - セクションはプロジェクトに何個もあり、履歴はセクションごとにまとまる。別の範囲に移ったら `section` を新しくする。
   `section.id` を省くと題の「:」の前が id になる。`tasks[].section` にはこの id を書く
 - git の差分は rb が記録するので書かない
-- `source.tool` は `claude-code`、`source.written_by` は `llm`
+- `source.tool` は `{tool}`、`source.written_by` は `llm`
 - `history` はフックが履歴のデータベースから埋めるので書かない
 - `run.id` と `run.finished_at` は書かない（rb が記録のときに入れる。LLM は今の時刻を知らない）
 - 前の回の `run.next` に取りかかったら `run.from_next: true`。やらなかったら、同じ `title` で `not_done` に書いて行き先を付ける。

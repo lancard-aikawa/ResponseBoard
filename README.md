@@ -14,9 +14,10 @@ LLM / 人 / スクリプト ─→ .responseboard/status.json ─→ rb（形の
 |---|---|
 | `src/responseboard/` | 本体（標準ライブラリだけ）。`status.py` 形のチェック、`store.py` SQLite、`gitsnap.py` git の差分、`ignore.py` 外す一覧、`cli.py` rb コマンド |
 | `scripts/rb.cmd` | rb コマンドの起動役 |
-| `hooks/rb_hook.py` | Claude Code のつなぎ役（SessionStart / UserPromptSubmit / Stop フック）。中身は本体を呼ぶだけ |
-| `hooks/install_claude.py` | Claude Code に入れる・外す（全体か個別か） |
-| `hooks/claude_rules.py` | Claude に渡す決まりの文（CLAUDE.md の節と SessionStart で同じ文） |
+| `hooks/rb_hook.py` | Claude Code と Codex のつなぎ役（SessionStart / UserPromptSubmit / Stop フック。Codex は `--tool codex`）。中身は本体を呼ぶだけ |
+| `hooks/install_claude.py` / `install_codex.py` | Claude Code / Codex に入れる・外す（全体か個別か） |
+| `hooks/claude_rules.py` | LLM に渡す決まりの文（CLAUDE.md・AGENTS.md の節と SessionStart で同じ文。道具の名前だけ変わる） |
+| `hooks/claude_transcript.py` / `codex_transcript.py` | 記録ファイルから今回の会話を読む |
 | `schema/status.schema.json` | 1 回の実行結果の形（`responseboard/status@1`） |
 | `samples/status.sample.json` | 見本のデータ |
 | `board/responseboard.html` | ボード（見本データを中に埋め込んである） |
@@ -78,6 +79,25 @@ Python 3.11 以上だけ。あとは Claude Code に次のように頼めば、C
 2. `CLAUDE.md` に `<!-- responseboard:start -->` 〜 `end` の節を足す（無ければ作る）
 3. `.gitignore` があれば `.responseboard/` を足す
 4. 最初の 1 件を記録して、ボードのプロジェクト一覧に出す
+
+## 入れる（Codex）
+
+Codex（0.162 以降。アプリ・VS Code 拡張・CLI のどれでも）のフックは Claude Code と同じ形なので、同じ `rb_hook.py` を
+`--tool codex` で呼ぶ。Codex の `notify` は使わない（1 つしか持てず、アプリの computer-use が使っている）。
+
+| 入れ方 | コマンド | 書く所 |
+|---|---|---|
+| 全体 | `python <取得したフォルダ>/hooks/install_codex.py --scope user` | `~/.codex/hooks.json`（`CODEX_HOME` があればその中）。SessionStart / UserPromptSubmit / Stop |
+| 個別 | `python <取得したフォルダ>/hooks/install_codex.py --scope project <フォルダ> [--name 表示名]` | `<フォルダ>/.codex/hooks.json`（UserPromptSubmit / Stop）と `AGENTS.md` の節 |
+
+- **入れたあと、Codex で `/hooks` を開いて ResponseBoard のフックを信頼（trust）する。**Codex は信頼していないフックを飛ばす。
+  個別のときは、プロジェクト自体も信頼されている必要がある。フックの中身（ResponseBoard の場所）が変わると、信頼し直しになる
+- 決まりは `AGENTS.md` の節か、SessionStart フックで渡す（`source.tool` は `codex`）。Codex にはステータスラインを足す口が無いので、結果はボードで見る
+- 会話は Codex の記録ファイル（`transcript_path`）から読む（`hooks/codex_transcript.py`）。ユーザーの発言の頭に VS Code 拡張が付ける
+  「# Context from my IDE setup」と `<environment_context>` は省く。道具は 1 行（code mode の `exec` は中の `exec_command` のコマンド）、
+  パッチは触ったファイルの場所だけ。Codex はこの形を「安定していない」としているので、読めないときは頼み（UserPromptSubmit の `prompt`）と
+  最後の返事（Stop の `last_assistant_message`）の 2 つだけを残す
+- 2026-10-21 に Codex 0.162 の `codex exec` で 1 回通して確かめた（フックは `-c` で渡し、`--dangerously-bypass-hook-trust` で 1 回だけ信頼を飛ばした）
 
 ### 外す一覧（ignore）
 
